@@ -106,6 +106,16 @@ export interface WordLookup {
   found:      boolean
 }
 
+export interface LessonMemoryItem {
+  id:          number
+  created_at:  string
+  lesson_id:   string
+  unit_id:     string
+  title:       string
+  source:      string
+  detail:      string
+}
+
 export interface Story {
   id:            string
   title_fr:      string
@@ -247,6 +257,31 @@ export interface AiCoachPlan {
   blocks: string[]
 }
 
+export interface DiagnosisPattern {
+  tag: string
+  description: string
+  tip: string
+}
+
+export interface PatternDiagnosis {
+  patterns: DiagnosisPattern[]
+  headline: string
+  overall_advice: string
+}
+
+export interface GeneratedDrillQ {
+  type: 'arrange' | 'translate'
+  cefr: string
+  unitId: string
+  lessonType: string
+  prompt: string
+  answer: string
+  note?: string
+  words?: string[]
+  direction?: string
+  isGenerated?: boolean
+}
+
 // ── API calls ─────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -345,6 +380,13 @@ export const api = {
     expected_answer: string
     note?: string
   }) => post<AiMistakeFeedback>('/ai/mistake-feedback', data),
+  getPatternDiagnosis: () => get<PatternDiagnosis>('/adaptive/pattern-diagnosis'),
+  generatePractice: (data: {
+    cefr: string
+    skill_tag: string
+    examples: { prompt: string; answer: string }[]
+    count: number
+  }) => post<{ questions: GeneratedDrillQ[] }>('/ai/generate-practice', data),
 
   // Stories
   getStories:       () => get<{ stories: Story[] }>('/stories'),
@@ -364,6 +406,23 @@ export const api = {
 
   // Brief
   generateBrief: () => post<{ ok: boolean }>('/brief/generate'),
+
+  // Lesson completion memory (milestones)
+  logLessonMemory: (body: {
+    lesson_id: string
+    title:     string
+    source?:   string
+    unit_id?:  string
+    detail?:   string
+  }) => post<{ ok: boolean }>('/lesson-memory', body),
+
+  getLessonMemory: (limit = 80) =>
+    get<{ items: LessonMemoryItem[] }>(`/lesson-memory?limit=${limit}`),
+
+  hoverTranslation: (word: string, pair: 'fr|en' | 'en|fr' = 'fr|en') =>
+    get<{ text: string }>(
+      `/translate/hover?q=${encodeURIComponent(word)}&pair=${encodeURIComponent(pair)}`,
+    ),
 }
 
 // ── Streaming helper ──────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { api, Learner, StreakState, AdaptiveProfile, AdaptiveNextLesson, C1Status, C2Status, CefrMission, CefrCheckpoint, AiCoachPlan, ReviewQueueItem, Story, StoryDetail, WeakSkillItem, streamLesson } from '../lib/api'
+import { api, Learner, StreakState, AdaptiveProfile, AdaptiveNextLesson, C1Status, C2Status, CefrMission, CefrCheckpoint, AiCoachPlan, ReviewQueueItem, Story, StoryDetail, WeakSkillItem, PatternDiagnosis, GeneratedDrillQ, streamLesson } from '../lib/api'
 import { GRAMMAR, GrammarRule, CATEGORIES, CEFR_LEVELS } from '../lib/grammar'
 import { buildCourse, LESSON_TYPE_ICONS, LESSON_TYPE_COLORS } from '../lib/course'
 import { QUESTION_BANK, CEFR_ELO, UNIT_META, DrillQ, type CefrLevel } from '../lib/questionBank'
@@ -8,11 +8,13 @@ import Onboarding  from '../components/Onboarding'
 import VoiceMode   from '../components/VoiceMode'
 import StoryPlayer from '../components/StoryPlayer'
 import SkillTree   from '../components/SkillTree'
+import WordHints   from '../components/WordHints'
+import MemoryLog   from '../components/MemoryLog'
 import toast from 'react-hot-toast'
 import confetti from 'canvas-confetti'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type Mode = 'learn'|'chat'|'mathieu'|'voice'|'stories'|'map'|'grammar'|'review'|'settings'
+type Mode = 'learn'|'chat'|'mathieu'|'voice'|'stories'|'map'|'grammar'|'review'|'memory'|'settings'
 
 interface Msg   { role:'assistant'|'user'; text:string }
 interface ArrangeAiFeedback { corrected: string; explanation: string; next_step?: string }
@@ -86,6 +88,34 @@ function stripMarks(s: string): string {
   }
 }
 
+/** Levenshtein distance; used for one-typo tolerance on longer answers. */
+function levenshtein(a: string, b: string): number {
+  const m = a.length
+  const n = b.length
+  if (m === 0) return n
+  if (n === 0) return m
+  let v0 = Array.from({ length: n + 1 }, (_, j) => j)
+  let v1 = new Array<number>(n + 1).fill(0)
+  for (let i = 0; i < m; i++) {
+    v1[0] = i + 1
+    for (let j = 0; j < n; j++) {
+      const cost = a[i] === b[j] ? 0 : 1
+      v1[j + 1] = Math.min(v1[j] + 1, v0[j + 1] + 1, v0[j] + cost)
+    }
+    ;[v0, v1] = [v1, v0]
+  }
+  return v0[n]
+}
+
+/** Accept answers one (or two, for long strings) edits away from expected — e.g. m'apelle vs m'appelle. */
+function nearlyMatches(userNorm: string, expNorm: string): boolean {
+  if (expNorm.length < 10) return false
+  const d = levenshtein(userNorm, expNorm)
+  if (d <= 1) return true
+  if (expNorm.length >= 32 && d <= 2) return true
+  return false
+}
+
 /** Lenient compare: labels, quotes, final punctuation, curly apostrophes; optional substring when user pasted extra chatter. */
 function answersEquivalent(userRaw: string, expectedRaw: string): boolean {
   const exp = normalizeAnswerCore(expectedRaw, false)
@@ -96,6 +126,15 @@ function answersEquivalent(userRaw: string, expectedRaw: string): boolean {
   const minLen = 8
   if (exp.length >= minLen && (userFull.includes(exp) || userLabeled.includes(exp))) return true
   if (stripMarks(userLabeled) === stripMarks(exp) || stripMarks(userFull) === stripMarks(exp)) return true
+  for (const u of [userLabeled, userFull]) {
+    if (!u) continue
+    if (nearlyMatches(u, exp)) return true
+    const su = stripMarks(u)
+    const se = stripMarks(exp)
+    if (su !== u || se !== exp) {
+      if (nearlyMatches(su, se)) return true
+    }
+  }
   return false
 }
 
@@ -157,6 +196,9 @@ export default function App() {
   const [stories, setStories] = useState<Story[]>([])
   const [storySession, setStorySession] = useState<StoryDetail | null>(null)
   const [nextBestLesson, setNextBestLesson] = useState<AdaptiveNextLesson | null>(null)
+  const [patternDiagnosis, setPatternDiagnosis] = useState<PatternDiagnosis | null>(null)
+  const [generatedQuestions, setGeneratedQuestions] = useState<DrillQ[]>([])
+  const [generatingPractice, setGeneratingPractice] = useState<string | null>(null) // skill_tag being generated
 
   // Chat state
   const [chatMsgs,   setChatMsgs]  = useState<Msg[]>([])
@@ -197,9 +239,10 @@ export default function App() {
           api.getAiCoachPlan(),
           api.getWeakSkillReport(),
           api.getReviewQueue(12),
+          api.getPatternDiagnosis(),
         ])
         const [
-          lr, sr, dr, pr, c1r, c2r, nbr, settingsR, missionsR, planR, weakR, queueR,
+          lr, sr, dr, pr, c1r, c2r, nbr, settingsR, missionsR, planR, weakR, queueR, diagR,
         ] = settled
         const l = lr.status === 'fulfilled' ? lr.value : null
         if (!l) {
@@ -222,6 +265,7 @@ export default function App() {
         if (planR.status === 'fulfilled') setAiCoachPlan(planR.value)
         if (weakR.status === 'fulfilled') setWeakSkills(weakR.value.skills || [])
         if (queueR.status === 'fulfilled') setReviewQueue(queueR.value.items || [])
+        if (diagR.status === 'fulfilled') setPatternDiagnosis(diagR.value)
         const settingsRes = settingsR.status === 'fulfilled' ? settingsR.value : { settings: {} as Record<string, string> }
         const firstUnlockedUnit = UNIT_META.find(u => (l.elo || 800) >= CEFR_ELO[u.cefr].min)?.id || UNIT_META[0]?.id || ''
         setCurrentUnitId(settingsRes.settings?.current_unit || firstUnlockedUnit)
@@ -258,9 +302,11 @@ export default function App() {
       const band = CEFR_ELO[q.cefr]
       return currentElo >= band.min
     })
-    if (!currentUnitId) return unlocked
+    if (!currentUnitId) return [...generatedQuestions, ...unlocked]
     const inUnit = unlocked.filter(q => q.unitId === currentUnitId)
-    return inUnit.length > 0 ? inUnit : unlocked
+    const base = inUnit.length > 0 ? inUnit : unlocked
+    // Prepend AI-generated questions so they appear first when active
+    return generatedQuestions.length > 0 ? [...generatedQuestions, ...base] : base
   }
 
   function resetQ(idx: number, useAbsolute = false) {
@@ -401,10 +447,20 @@ export default function App() {
         if (nextAnswered >= 10 && (nextCorrect / nextAnswered) >= 0.75) {
           const nextUnit = chooseNextUnlockedUnit(currentUnitId)
           if (nextUnit && nextUnit !== currentUnitId) {
+            const finishedUnit = currentUnitId
             setCurrentUnitId(nextUnit)
             api.saveSetting('current_unit', nextUnit).catch(()=>{})
             setUnitStats({ answered: 0, correct: 0 })
             toast.success(`Unit complete. Moving to ${nextUnit.toUpperCase()}`)
+            void api
+              .logLessonMemory({
+                lesson_id: `unit:${finishedUnit}`,
+                title:     `Finished unit ${finishedUnit}`,
+                unit_id:   finishedUnit,
+                source:    'unit',
+                detail:    `Next unit: ${nextUnit}`,
+              })
+              .catch(() => {})
           }
         }
       } catch {}
@@ -418,16 +474,20 @@ export default function App() {
       response_ms: responseMs,
       user_answer: userAnswer,
       expected_answer: q.answer,
-    }).then(()=>api.getAdaptiveProfile().then(setAdaptive).catch(()=>{})).catch(()=>{})
+    }).then(()=>{
+      api.getAdaptiveProfile().then(setAdaptive).catch(()=>{})
+      if (!ok) api.getPatternDiagnosis().then(setPatternDiagnosis).catch(()=>{})
+    }).catch(()=>{})
   }
 
   async function finishCheckpoint(timeout = false) {
     if (!checkpointSession) return
-    const total = checkpointSession.indices.length
-    const pct = Math.round((checkpointSession.correct / Math.max(total, 1)) * 100)
+    const sess = checkpointSession
+    const total = sess.indices.length
+    const pct = Math.round((sess.correct / Math.max(total, 1)) * 100)
     setCheckpointBusy(true)
     try {
-      const res = await api.runCefrCheckpoint(checkpointSession.level, pct)
+      const res = await api.runCefrCheckpoint(sess.level, pct)
       setCheckpointResult({
         ...res,
         recommendation: timeout ? `Time expired. ${res.recommendation}` : res.recommendation,
@@ -436,6 +496,14 @@ export default function App() {
       setMissions(missionsRes.missions || [])
       setC1Status(c1)
       api.getC2Status().then(setC2Status).catch(()=>{})
+      void api
+        .logLessonMemory({
+          lesson_id: `checkpoint:${sess.level}`,
+          title:     `CEFR ${sess.level} level exam`,
+          source:    'checkpoint',
+          detail:    `${pct}% · ${res.passed ? 'passed' : 'not passed'}${timeout ? ' · time expired' : ''}`,
+        })
+        .catch(() => {})
       if (!res.passed) setMode('review')
     } catch {
       toast.error('Checkpoint submission failed')
@@ -589,6 +657,31 @@ export default function App() {
     resetQ(indices[0], true)
   }
 
+  async function generatePracticeForPattern(tag: string, cefr: string) {
+    setGeneratingPractice(tag)
+    try {
+      // Gather up to 5 existing wrong-answer prompts for this skill as seed examples
+      const examples = (adaptive?.focus_prompts || [])
+        .slice(0, 5)
+        .map(f => ({ prompt: f.prompt, answer: '' }))
+      const res = await api.generatePractice({ cefr, skill_tag: tag, examples, count: 6 })
+      if (!res.questions?.length) {
+        toast.error('No questions generated — try again in a moment.')
+        return
+      }
+      // Cast to DrillQ (backend returns compatible shape)
+      const qs = res.questions as unknown as DrillQ[]
+      setGeneratedQuestions(qs)
+      toast.success(`Generated ${qs.length} practice questions for "${tag}"`)
+      setShowTree(false)
+      resetQ(0) // index 0 in eligible pool → first generated question
+    } catch (e) {
+      toast.error('Could not generate practice: ' + String(e))
+    } finally {
+      setGeneratingPractice(null)
+    }
+  }
+
   useEffect(() => {
     if (!checkpointSession) return
     const id = setInterval(() => {
@@ -678,6 +771,8 @@ export default function App() {
   const q = checkpointSession
     ? QUESTIONS[qi % QUESTIONS.length]
     : eligibleQuestions[qi % eligibleQuestions.length]
+  const hintPair: 'fr|en' | 'en|fr' =
+    q.type === 'translate' && (q as { direction?: string }).direction === 'en-fr' ? 'en|fr' : 'fr|en'
   const qPct = checkpointSession
     ? Math.round(((checkpointSession.pos + 1) / checkpointSession.indices.length) * 100)
     : Math.round((qi % eligibleQuestions.length) / eligibleQuestions.length * 100)
@@ -699,6 +794,7 @@ export default function App() {
     {id:'voice'  as Mode,icon:'🎙️',label:'Voice'},
     {id:'stories'as Mode,icon:'📚',label:'Stories'},
     {id:'review' as Mode,icon:'🔁',label:'Review'},
+    {id:'memory' as Mode,icon:'📓',label:'Memory'},
     {id:'map'    as Mode,icon:'🗺️',label:'Course'},
     {id:'grammar'as Mode,icon:'📐',label:'Grammar'},
   ]
@@ -780,6 +876,7 @@ export default function App() {
               {n.icon} {n.label}
             </button>
           ))}
+          <button className={`mode-tab${mode==='memory'?' active':''}`} onClick={()=>switchMode('memory')}>📓</button>
           <button className={`mode-tab${mode==='map'?' active':''}`} onClick={()=>switchMode('map')}>🗺️</button>
           <button className={`mode-tab${mode==='grammar'?' active':''}`} onClick={()=>switchMode('grammar')}>📐</button>
         </div>
@@ -844,6 +941,75 @@ export default function App() {
                     </div>
                   </div>
                 )}
+                {/* ── AI Weak-Spot Diagnosis ── */}
+                {patternDiagnosis && patternDiagnosis.patterns.length > 0 && (
+                  <div style={{padding:'0 20px 4px'}}>
+                    <div style={{
+                      background:'rgba(255,75,75,.06)',
+                      border:'1.5px solid rgba(255,75,75,.22)',
+                      borderRadius:16,
+                      padding:'14px 16px',
+                    }}>
+                      <div style={{fontSize:13,fontWeight:900,color:'var(--red)',marginBottom:2}}>
+                        🧠 AI Diagnosis
+                      </div>
+                      <div style={{fontSize:12,fontWeight:700,color:'var(--text)',marginBottom:10}}>
+                        {patternDiagnosis.headline}
+                      </div>
+                      {patternDiagnosis.patterns.map((p, i) => (
+                        <div key={`pat-${i}`} style={{
+                          background:'var(--surface2)',
+                          border:'1px solid var(--border)',
+                          borderRadius:12,
+                          padding:'10px 12px',
+                          marginBottom:8,
+                        }}>
+                          <div style={{fontSize:12,fontWeight:800,color:'var(--text)',marginBottom:3}}>
+                            ⚠️ {p.tag}
+                          </div>
+                          <div style={{fontSize:12,color:'var(--t2)',marginBottom:4}}>{p.description}</div>
+                          <div style={{fontSize:11,color:'var(--blue-b)',fontWeight:700,marginBottom:8}}>
+                            💡 {p.tip}
+                          </div>
+                          <button
+                            style={{
+                              width:'100%',
+                              padding:'9px 14px',
+                              borderRadius:10,
+                              background: generatingPractice === p.tag ? 'var(--surface2)' : 'var(--red)',
+                              color:'#fff',
+                              fontWeight:800,
+                              fontSize:12,
+                              border:'none',
+                              cursor: generatingPractice ? 'not-allowed' : 'pointer',
+                              opacity: generatingPractice && generatingPractice !== p.tag ? 0.5 : 1,
+                              transition:'opacity .2s',
+                            }}
+                            disabled={!!generatingPractice}
+                            onClick={() => {
+                              // derive CEFR from weakest skill or default to learner's current level
+                              const level = learner?.elo != null
+                                ? (['A1','A2','B1','B2','C1','C2'] as const)
+                                    .slice()
+                                    .reverse()
+                                    .find(l => (learner.elo || 800) >= CEFR_ELO[l].min) ?? 'A1'
+                                : 'A1'
+                              generatePracticeForPattern(p.tag, level)
+                            }}
+                          >
+                            {generatingPractice === p.tag ? '⏳ Generating…' : '⚡ Generate Practice'}
+                          </button>
+                        </div>
+                      ))}
+                      {patternDiagnosis.overall_advice && (
+                        <div style={{fontSize:11,color:'var(--t3)',marginTop:4}}>
+                          {patternDiagnosis.overall_advice}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Branching skill tree by CEFR level */}
                 {(['A1','A2','B1','B2','C1','C2'] as const).map(cefr => {
                   const meta      = CEFR_META[cefr]
@@ -897,7 +1063,7 @@ export default function App() {
           {mode==='learn' && !showTree && (
             <div className="lesson-wrap">
               <div className="lesson-progress-row">
-                <button className="lesson-close" onClick={()=>setShowTree(true)}>✕</button>
+                <button className="lesson-close" onClick={()=>{ setShowTree(true); setGeneratedQuestions([]) }}>✕</button>
                 <div className="lesson-prog-track">
                   <div className="lesson-prog-fill" style={{width:`${qPct}%`}}/>
                 </div>
@@ -948,7 +1114,7 @@ export default function App() {
                 {/* MCQ */}
                 {q.type==='mcq' && <>
                   <div className="q-label">Choose the correct answer</div>
-                  <div className="q-prompt">{q.prompt}</div>
+                  <div className="q-prompt"><WordHints text={q.prompt} pair={hintPair} /></div>
                   <div className="options single-col">
                     {(q as any).options.map((opt:string,i:number)=>{
                       const isAns = opt===(q as any).answer
@@ -956,7 +1122,7 @@ export default function App() {
                       if(answered&&opt===(q as any).answer) cls='correct'
                       else if(answered&&!correct&&i===(q as any).options.indexOf(opt)&&opt!==(q as any).answer) cls=''
                       return <button key={i} className={`opt ${cls}`} onClick={()=>submitAnswer(opt)} disabled={answered}>
-                        <span className="opt-letter">{['A','B','C','D'][i]}</span>{opt}
+                        <span className="opt-letter">{['A','B','C','D'][i]}</span><WordHints text={opt} pair={hintPair} />
                       </button>
                     })}
                   </div>
@@ -965,7 +1131,7 @@ export default function App() {
                 {/* ARRANGE */}
                 {q.type==='arrange' && <>
                   <div className="q-label">Arrange the words</div>
-                  <div className="q-prompt">{q.prompt}</div>
+                  <div className="q-prompt"><WordHints text={q.prompt} pair={hintPair} /></div>
 
                   {/* Drop zone */}
                   <div className={`drop-zone${arranged.length>0?' has-words':''}${answered?(correct?' correct':' wrong'):''}`}>
@@ -976,7 +1142,7 @@ export default function App() {
                             className={`word-tile placed${answered?(correct?' correct-tile':' wrong-tile'):''}`}
                             onClick={()=>tapArranged(w,i)}
                             disabled={answered}>
-                            {w}
+                            <WordHints text={w} pair={hintPair} />
                           </button>
                         ))
                     }
@@ -989,7 +1155,7 @@ export default function App() {
                         className="word-tile"
                         onClick={()=>tapAvail(w,i)}
                         disabled={answered}>
-                        {w}
+                        <WordHints text={w} pair={hintPair} />
                       </button>
                     ))}
                   </div>
@@ -1007,6 +1173,14 @@ export default function App() {
                 {/* LISTEN */}
                 {q.type==='listen' && <>
                   <div className="q-label">Listen and type what you hear</div>
+                  {(q as { audioText?: string }).audioText ? (
+                    <div className="q-prompt" style={{ marginBottom: 8 }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--t3)', display: 'block', marginBottom: 6 }}>
+                        Hover words for English (reference)
+                      </span>
+                      <WordHints text={(q as { audioText: string }).audioText} pair="fr|en" />
+                    </div>
+                  ) : null}
                   <div style={{display:'flex',justifyContent:'center',margin:'16px 0 20px'}}>
                     <button onClick={()=>playAudio((q as any).audioText)}
                       style={{width:80,height:80,borderRadius:'50%',background:speaking?'var(--green-dim)':'var(--blue-dim)',border:`3px solid ${speaking?'var(--green)':'var(--blue)'}`,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',transition:'all .2s',boxShadow:`0 0 20px ${speaking?'var(--green-glow)':'var(--blue-glow)'}`,fontSize:'2rem'}}>
@@ -1039,7 +1213,7 @@ export default function App() {
                   <div className="q-label">
                     {(q as any).direction==='en-fr'?'🇬🇧 Translate to French':'🇫🇷 Translate to English'}
                   </div>
-                  <div className="q-prompt">{q.prompt}</div>
+                  <div className="q-prompt"><WordHints text={q.prompt} pair={hintPair} /></div>
                   <input
                     className={`answer-input${answered?(correct?' correct':' wrong'):''}`}
                     value={transInput}
@@ -1375,6 +1549,8 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {mode === 'memory' && <MemoryLog />}
 
           {/* ── SETTINGS ── */}
           {mode==='settings' && (

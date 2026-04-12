@@ -116,6 +116,14 @@ class CefrCheckpointResponse(BaseModel):
     required_pct: int
     recommendation: str
 
+class LessonMemoryIn(BaseModel):
+    lesson_id: str
+    title: str
+    source: str = "course"
+    unit_id: Optional[str] = None
+    detail: Optional[str] = None
+
+
 class CheckpointSubmitRequest(BaseModel):
     score_pct: Optional[int] = None
 
@@ -194,6 +202,24 @@ def _ensure_core_db() -> None:
             db.execute("ALTER TABLE adaptive_events ADD COLUMN cefr TEXT NOT NULL DEFAULT 'A1'")
         if "skill_tag" not in cols:
             db.execute("ALTER TABLE adaptive_events ADD COLUMN skill_tag TEXT NOT NULL DEFAULT 'general'")
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS lesson_completion_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                lesson_id TEXT NOT NULL,
+                unit_id TEXT,
+                title TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'course',
+                detail TEXT
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS hover_translation_cache (
+                fr_norm TEXT PRIMARY KEY,
+                en_text TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
 
 
 def _get_learner_elo() -> int:
@@ -412,6 +438,105 @@ def _load_checkpoints():
 @app.get("/api/health")
 def health():
     return {"status": "ok", "version": "2.0"}
+
+
+# ── Lesson memory log (completed milestones) ──────────────────────────────────
+
+@app.post("/api/lesson-memory")
+def post_lesson_memory(body: LessonMemoryIn):
+    _ensure_core_db()
+    import sqlite3
+    try:
+        with sqlite3.connect("cato_mind.db") as db:
+            db.execute(
+                """INSERT INTO lesson_completion_log (lesson_id, unit_id, title, source, detail)
+                   VALUES (?,?,?,?,?)""",
+                (
+                    body.lesson_id[:200],
+                    (body.unit_id or "")[:120] or None,
+                    body.title[:500],
+                    body.source[:80],
+                    (body.detail or "")[:2000] or None,
+                ),
+            )
+        return {"ok": True}
+    except Exception as exc:
+        log.warning("lesson-memory log: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/lesson-memory")
+def get_lesson_memory(limit: int = 100):
+    _ensure_core_db()
+    import sqlite3
+    lim = max(1, min(limit, 200))
+    with sqlite3.connect("cato_mind.db") as db:
+        rows = db.execute(
+            """SELECT id, created_at, lesson_id, unit_id, title, source, detail
+               FROM lesson_completion_log ORDER BY id DESC LIMIT ?""",
+            (lim,),
+        ).fetchall()
+    items = [
+        {
+            "id": r[0],
+            "created_at": r[1],
+            "lesson_id": r[2],
+            "unit_id": r[3] or "",
+            "title": r[4],
+            "source": r[5],
+            "detail": r[6] or "",
+        }
+        for r in rows
+    ]
+    return {"items": items}
+
+
+# ── Hover translation (French → English, cached) ─────────────────────────────
+
+def _hover_lookup_cached(word: str, langpair: str) -> str:
+    import sqlite3
+    import urllib.parse
+    import urllib.request
+
+    w = word.strip().lower()
+    if not w or len(w) > 80:
+        return ""
+    cache_key = f"{langpair}:{w}"
+    _ensure_core_db()
+    with sqlite3.connect("cato_mind.db") as db:
+        row = db.execute(
+            "SELECT en_text FROM hover_translation_cache WHERE fr_norm = ?", (cache_key,)
+        ).fetchone()
+        if row and row[0]:
+            return row[0]
+    try:
+        q = urllib.parse.urlencode({"q": w, "langpair": langpair})
+        url = f"https://api.mymemory.translated.net/get?{q}"
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+        out = (data.get("responseData") or {}).get("translatedText") or ""
+        if not out or "MYMEMORY WARNING" in out.upper():
+            return ""
+        with sqlite3.connect("cato_mind.db") as db:
+            db.execute(
+                "INSERT OR REPLACE INTO hover_translation_cache (fr_norm, en_text) VALUES (?,?)",
+                (cache_key, out[:500]),
+            )
+        return out
+    except Exception as exc:
+        log.warning("hover translate %s: %s", w, exc)
+        return ""
+
+
+@app.get("/api/translate/hover")
+def translate_hover(q: str = "", pair: str = "fr|en"):
+    if not q or not q.strip():
+        return {"text": ""}
+    lp = pair if "|" in pair else "fr|en"
+    if lp not in ("fr|en", "en|fr"):
+        lp = "fr|en"
+    gloss = _hover_lookup_cached(q, lp)
+    return {"text": gloss or "—"}
 
 
 # ── Learner ───────────────────────────────────────────────────────────────────
@@ -1480,6 +1605,168 @@ def lookup_word(word: str):
                 "is_cognate": False, "found": False}
     except Exception as exc:
         return {"french": word, "english": "—", "found": False}
+
+
+# ── Pattern Diagnosis ─────────────────────────────────────────────────────────
+
+@app.get("/api/adaptive/pattern-diagnosis")
+def pattern_diagnosis():
+    """
+    AI-powered analysis of the learner's mistake patterns.
+    Surfaces specific grammatical diagnoses instead of raw skill tags.
+    """
+    try:
+        import sqlite3
+        _ensure_core_db()
+        with sqlite3.connect("cato_mind.db") as db:
+            rows = db.execute(
+                """
+                SELECT q_type, skill_tag, prompt, user_answer, expected_answer
+                FROM adaptive_events
+                WHERE correct = 0
+                ORDER BY id DESC
+                LIMIT 60
+                """,
+            ).fetchall()
+
+        if len(rows) < 3:
+            return {
+                "patterns": [],
+                "headline": "Keep practising — patterns will appear after a few mistakes.",
+                "overall_advice": "",
+            }
+
+        mistakes = [
+            {
+                "type": r[0],
+                "skill": r[1],
+                "prompt": r[2],
+                "yours": r[3],
+                "correct": r[4],
+            }
+            for r in rows[:20]
+        ]
+
+        ai_prompt = (
+            "You are a French language expert diagnosing a learner's error patterns. "
+            "Return ONLY strict JSON with keys: headline (str), overall_advice (str), "
+            "patterns (array of 1-3 objects with keys: tag, description, tip). "
+            "description = 1 sentence naming the grammatical error pattern. "
+            "tip = 1 actionable sentence the learner can act on immediately.\n\n"
+            f"Recent mistakes (type / skill / prompt / learner-answer / correct-answer):\n"
+            f"{json.dumps(mistakes, ensure_ascii=False)}"
+        )
+
+        data = _ai_json_or_none(ai_prompt)
+        if data and isinstance(data.get("patterns"), list):
+            return {
+                "patterns": [
+                    {
+                        "tag": str(p.get("tag", "general")).strip(),
+                        "description": str(p.get("description", "")).strip(),
+                        "tip": str(p.get("tip", "")).strip(),
+                    }
+                    for p in data["patterns"][:3]
+                    if p.get("description")
+                ],
+                "headline": str(data.get("headline", "Your weak spots:")).strip(),
+                "overall_advice": str(data.get("overall_advice", "")).strip(),
+            }
+
+        # Fallback: simple frequency grouping
+        by_skill: dict = {}
+        for r in rows:
+            by_skill[r[1]] = by_skill.get(r[1], 0) + 1
+        top = sorted(by_skill.items(), key=lambda x: -x[1])[:3]
+        return {
+            "patterns": [
+                {
+                    "tag": t,
+                    "description": f"{c} error(s) logged under '{t}'.",
+                    "tip": f"Drill more {t} exercises to build the pattern.",
+                }
+                for t, c in top
+            ],
+            "headline": "Your weak spots:",
+            "overall_advice": "Focus on the most frequent error first.",
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── AI-Generated Practice Questions ──────────────────────────────────────────
+
+class GeneratePracticeRequest(BaseModel):
+    cefr: str = "A1"
+    skill_tag: str = "syntax"
+    examples: list = []
+    count: int = 5
+
+
+@app.post("/api/ai/generate-practice")
+def generate_practice(req: GeneratePracticeRequest):
+    """
+    Generate novel drill questions targeting a specific weak skill.
+    Returns DrillQ-compatible objects (arrange or translate).
+    """
+    try:
+        import re
+        ex_lines = "\n".join(
+            f"  • Prompt: {e.get('prompt', '')} | Answer: {e.get('answer', '')}"
+            for e in (req.examples or [])[:5]
+        ) or "  (no examples — use common French phrases)"
+
+        ai_prompt = (
+            f"Generate exactly {req.count} French drill questions for a {req.cefr} learner.\n"
+            f"Target grammar skill: {req.skill_tag}\n"
+            f"Example questions from this skill:\n{ex_lines}\n\n"
+            f"Rules:\n"
+            f"- Use different vocabulary from the examples but the SAME grammatical pattern.\n"
+            f"- Keep difficulty appropriate for {req.cefr}.\n"
+            f"- Mix 'arrange' and 'translate' types (at least 2 of each if count >= 4).\n"
+            f"- For arrange: prompt = English sentence to reconstruct, answer = French sentence.\n"
+            f"- For translate: prompt = 'Translate: \"<English>\"', answer = French sentence.\n"
+            f"Return ONLY a JSON array: "
+            f'[{{"type":"arrange"|"translate","prompt":"...","answer":"...","note":"brief grammar tip"}}]'
+        )
+
+        data = _ai_json_or_none(ai_prompt)
+        if not isinstance(data, list):
+            return {"questions": []}
+
+        questions = []
+        for item in data[: req.count + 2]:
+            if not isinstance(item, dict):
+                continue
+            q_type = str(item.get("type", "translate")).strip()
+            prompt = str(item.get("prompt", "")).strip()
+            answer = str(item.get("answer", "")).strip()
+            note   = str(item.get("note", "")).strip()
+            if not prompt or not answer:
+                continue
+            q: dict = {
+                "type": q_type if q_type in ("arrange", "translate") else "translate",
+                "cefr": req.cefr,
+                "unitId": f"{req.cefr.lower()}-ai-generated",
+                "lessonType": "grammar_focus",
+                "prompt": prompt,
+                "answer": answer,
+                "note": note,
+                "isGenerated": True,
+            }
+            if q["type"] == "arrange":
+                words = re.sub(r"([!?.,;:])", r" \1 ", answer)
+                q["words"] = [w for w in words.split() if w]
+                # Ensure direction field absent for translate (not needed for arrange)
+            else:
+                q["direction"] = "en-fr"
+            questions.append(q)
+            if len(questions) >= req.count:
+                break
+
+        return {"questions": questions}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ── Morning brief ─────────────────────────────────────────────────────────────
