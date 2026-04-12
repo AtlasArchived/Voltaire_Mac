@@ -4,9 +4,10 @@ import { api, Learner, StreakState, AdaptiveProfile, AdaptiveNextLesson, C1Statu
 import { GRAMMAR, GrammarRule, CATEGORIES, CEFR_LEVELS } from '../lib/grammar'
 import { buildCourse, LESSON_TYPE_ICONS, LESSON_TYPE_COLORS } from '../lib/course'
 import { QUESTION_BANK, CEFR_ELO, UNIT_META, DrillQ, type CefrLevel } from '../lib/questionBank'
-import Onboarding from '../components/Onboarding'
-import VoiceMode  from '../components/VoiceMode'
+import Onboarding  from '../components/Onboarding'
+import VoiceMode   from '../components/VoiceMode'
 import StoryPlayer from '../components/StoryPlayer'
+import SkillTree   from '../components/SkillTree'
 import toast from 'react-hot-toast'
 import confetti from 'canvas-confetti'
 
@@ -150,6 +151,7 @@ export default function App() {
   const [savingSettings, setSavingSettings] = useState(false)
   const [currentUnitId, setCurrentUnitId] = useState<string>('')
   const [unitStats, setUnitStats] = useState<{ answered: number; correct: number }>({ answered: 0, correct: 0 })
+  const [showTree, setShowTree] = useState(true)
   const [weakSkills, setWeakSkills] = useState<WeakSkillItem[]>([])
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>([])
   const [stories, setStories] = useState<Story[]>([])
@@ -629,6 +631,7 @@ export default function App() {
 
   function switchMode(m:Mode) {
     setMode(m)
+    if (m==='learn')   setShowTree(true)
     if (m==='chat')    initChat()
     if (m==='mathieu') initMathieu()
     if (m==='stories') {
@@ -776,10 +779,116 @@ export default function App() {
         <div className="content-area">
 
           {/* ── LEARN ── */}
-          {mode==='learn' && (
+          {/* ── LEARN — Skill Tree (pick a unit) ── */}
+          {mode==='learn' && showTree && (() => {
+            const CEFR_META = {
+              A1:{emoji:'🌱',name:'Foundation',    color:'#58cc02'},
+              A2:{emoji:'🌿',name:'Elementary',    color:'#1cb0f6'},
+              B1:{emoji:'⭐',name:'Intermediate',  color:'#a78bfa'},
+              B2:{emoji:'🌟',name:'Upper-Intermed',color:'#ffd900'},
+              C1:{emoji:'💎',name:'Advanced',      color:'#ff9600'},
+              C2:{emoji:'🏆',name:'Mastery',       color:'#ff4b4b'},
+            } as const
+            return (
+              <div style={{paddingBottom:64}}>
+                {/* AI Coach banner */}
+                {aiCoachPlan && (
+                  <div style={{padding:'16px 20px 4px'}}>
+                    <div style={{background:'rgba(79,156,249,.07)',border:'1px solid rgba(79,156,249,.2)',borderRadius:14,padding:'11px 14px'}}>
+                      <div style={{fontSize:12,fontWeight:800,color:'var(--blue-b)',marginBottom:3}}>{aiCoachPlan.headline}</div>
+                      <div style={{fontSize:12,color:'var(--t2)'}}>{aiCoachPlan.focus}</div>
+                    </div>
+                  </div>
+                )}
+                {/* Level Exams */}
+                {missions.length > 0 && (
+                  <div style={{padding:'12px 20px 0'}}>
+                    <div className="skill-missions">
+                      <div className="skill-missions-title">Level Exams</div>
+                      {missions.map(m => (
+                        <div key={m.level} className="skill-mission-row">
+                          <div>
+                            <div className="skill-mission-level">
+                              {CEFR_META[m.level as keyof typeof CEFR_META]?.emoji} {m.level}
+                              {m.completed && <span style={{color:'var(--green)',marginLeft:6}}>✓ Passed</span>}
+                              {!m.completed && m.unlocked && <span style={{color:'var(--blue-b)',marginLeft:6,fontSize:11}}>Unlocked</span>}
+                            </div>
+                            <div className="skill-mission-sub">ELO {m.min_elo}+ · Pass {m.required_pct}%</div>
+                          </div>
+                          <button
+                            className={`skill-mission-btn ${m.unlocked&&!m.completed?'unlocked':'locked'}`}
+                            disabled={!m.unlocked||m.completed||checkpointBusy}
+                            onClick={()=>startCheckpoint(m.level)}>
+                            {m.completed ? '✓ Done' : 'Start Exam'}
+                          </button>
+                        </div>
+                      ))}
+                      {checkpointResult && (
+                        <div className="skill-mission-result" style={{
+                          background: checkpointResult.passed?'var(--green-dim)':'var(--red-dim)',
+                          color:       checkpointResult.passed?'var(--green-b)':'var(--red)',
+                        }}>
+                          {checkpointResult.level} {checkpointResult.passed?'passed ✓':'not passed'} · {checkpointResult.score_pct}% / {checkpointResult.required_pct}%
+                          <div style={{fontSize:11,fontWeight:600,color:'var(--t2)',marginTop:4}}>{checkpointResult.recommendation}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {/* Branching skill tree by CEFR level */}
+                {(['A1','A2','B1','B2','C1','C2'] as const).map(cefr => {
+                  const meta      = CEFR_META[cefr]
+                  const cefrUnits = course.filter(u => u.cefr === cefr)
+                  if (!cefrUnits.length) return null
+                  const allLocked   = cefrUnits.every(u => u.locked)
+                  const activeIndex = cefrUnits.findIndex((_,i) =>
+                    courseLessonIndexToUnitId(cefr, i) === currentUnitId
+                  )
+                  return (
+                    <div key={cefr} style={{opacity: allLocked ? .32 : 1, transition:'opacity .3s'}}>
+                      {/* CEFR section banner */}
+                      <div style={{
+                        margin: '24px 24px 14px',
+                        padding: '13px 20px',
+                        borderRadius: 18,
+                        border: `2.5px solid ${meta.color}50`,
+                        background: `${meta.color}0e`,
+                        display: 'flex', alignItems: 'center',
+                        justifyContent: 'center', gap: 12,
+                      }}>
+                        <span style={{fontSize:'1.5rem'}}>{meta.emoji}</span>
+                        <div style={{textAlign:'center'}}>
+                          <div style={{fontSize:14,fontWeight:900,color:'#fff',letterSpacing:'.01em'}}>{meta.name}</div>
+                          <div style={{fontSize:11,fontWeight:800,color:meta.color,letterSpacing:'.1em',marginTop:2}}>{cefr}</div>
+                        </div>
+                      </div>
+                      {/* Branching nodes */}
+                      <SkillTree
+                        units={cefrUnits}
+                        color={meta.color}
+                        activeIndex={activeIndex}
+                        onSelect={idx => {
+                          const uid = courseLessonIndexToUnitId(cefr, idx)
+                          setCurrentUnitId(uid)
+                          api.saveSetting('current_unit', uid).catch(()=>{})
+                          setUnitStats({answered:0, correct:0})
+                          setShowTree(false)
+                          resetQ(0)
+                          toast.success(cefrUnits[idx].title)
+                        }}
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
+
+          {/* ── DRILL (within Learn) ── */}
+          {mode==='learn' && !showTree && (
             <div className="lesson-wrap">
               <div className="lesson-progress-row">
-                <button className="lesson-close" onClick={()=>toast('Progress saved')}>✕</button>
+                <button className="lesson-close" onClick={()=>setShowTree(true)}>✕</button>
                 <div className="lesson-prog-track">
                   <div className="lesson-prog-fill" style={{width:`${qPct}%`}}/>
                 </div>
@@ -979,176 +1088,8 @@ export default function App() {
             </div>
           )}
 
-          {/* ── COURSE MAP ── */}
-          {mode==='map' && (
-            <div style={{height:'100%',overflowY:'auto'}}>
-              <div style={{padding:'20px 20px 8px'}}>
-                <div style={{fontSize:'1.2rem',fontWeight:800,marginBottom:3}}>🗺️ Course Map</div>
-                <div style={{fontSize:14,fontWeight:600,color:'var(--t3)'}}>Your path to French fluency</div>
-              </div>
-              {aiCoachPlan && (
-                <div style={{padding:'0 20px 12px'}}>
-                  <div style={{background:'rgba(79,156,249,.08)',border:'1px solid rgba(79,156,249,.25)',borderRadius:12,padding:'10px 12px'}}>
-                    <div style={{fontSize:12,fontWeight:800,color:'var(--blue-b)',marginBottom:4}}>{aiCoachPlan.headline}</div>
-                    <div style={{fontSize:12,color:'var(--t2)',marginBottom:6}}>{aiCoachPlan.focus}</div>
-                    <div style={{fontSize:12,color:'var(--t2)'}}>
-                      {aiCoachPlan.blocks.map((b, i) => <div key={`${b}-${i}`}>• {b}</div>)}
-                    </div>
-                  </div>
-                </div>
-              )}
-              {nextBestLesson && (
-                <div style={{padding:'0 20px 12px'}}>
-                  <div style={{background:'rgba(88,204,2,.08)',border:'1px solid rgba(88,204,2,.25)',borderRadius:12,padding:'10px 12px'}}>
-                    <div style={{fontSize:12,fontWeight:800,color:'var(--green)',marginBottom:4}}>Next Best Lesson</div>
-                    <div style={{fontSize:12,color:'var(--t2)'}}>
-                      {nextBestLesson.cefr} · {nextBestLesson.focus_skill} · {nextBestLesson.recommended_q_type}
-                    </div>
-                    <div style={{fontSize:12,color:'var(--t2)',marginTop:4}}>{nextBestLesson.reason}</div>
-                  </div>
-                </div>
-              )}
-
-              <div style={{padding:'0 20px 12px'}}>
-                <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12,padding:'10px 12px'}}>
-                  <div style={{fontSize:12,fontWeight:800,color:'var(--blue-b)',marginBottom:6}}>
-                    Current study unit: {currentUnitId ? currentUnitId.toUpperCase() : 'Not set'}
-                  </div>
-                  <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-                    {unlockedUnits.map(u => (
-                      <button key={u.id}
-                        className={`check-btn ${currentUnitId===u.id?'continue':'ready'}`}
-                        style={{width:'auto',padding:'8px 10px'}}
-                        onClick={()=>{
-                          setCurrentUnitId(u.id)
-                          setUnitStats({ answered: 0, correct: 0 })
-                          api.saveSetting('current_unit', u.id).catch(()=>{})
-                          setMode('learn')
-                          resetQ(0)
-                        }}>
-                        {u.title}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{padding:'0 20px 16px'}}>
-                <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:14,padding:'12px 14px',marginBottom:10}}>
-                  <div style={{fontSize:12,fontWeight:800,letterSpacing:'.08em',textTransform:'uppercase',color:'var(--blue-b)',marginBottom:6}}>
-                    CEFR Missions
-                  </div>
-                  <div style={{display:'grid',gap:8}}>
-                    {missions.map((m)=>(
-                      <div key={m.level} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,padding:'8px 10px',background:'var(--surface3)',border:'1px solid var(--border)',borderRadius:10}}>
-                        <div>
-                          <div style={{fontSize:13,fontWeight:800}}>
-                            {m.level} {m.completed ? '✓' : m.unlocked ? '• Unlocked' : '• Locked'}
-                          </div>
-                          <div style={{fontSize:11,color:'var(--t3)'}}>ELO {m.min_elo}+ · Pass score {m.required_pct}%</div>
-                        </div>
-                        <button className={`check-btn ${m.unlocked?'ready':'default'}`} style={{width:'auto',padding:'8px 10px'}} disabled={!m.unlocked||checkpointBusy} onClick={()=>startCheckpoint(m.level)}>
-                          Start Exam
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  {checkpointResult && (
-                    <div style={{marginTop:10,padding:'10px 12px',background:checkpointResult.passed?'var(--green-dim)':'var(--red-dim)',border:'1px solid var(--border2)',borderRadius:10}}>
-                      <div style={{fontSize:13,fontWeight:800}}>
-                        {checkpointResult.level} {checkpointResult.passed ? 'passed' : 'not passed'} ({checkpointResult.score_pct}% / {checkpointResult.required_pct}%)
-                      </div>
-                      <div style={{fontSize:12,color:'var(--t2)',marginTop:4}}>{checkpointResult.recommendation}</div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {course.map((unit,ui)=>(
-                <div key={unit.id} style={{padding:'0 20px',marginBottom:20}}>
-                  {/* Unit header */}
-                  <div style={{
-                    background: unit.locked ? 'var(--surface)' : `linear-gradient(135deg,${unit.color}22,${unit.color}11)`,
-                    border:`2px solid ${unit.locked?'var(--border)':unit.color}`,
-                    borderRadius:16,padding:'16px 18px',marginBottom:12,
-                    opacity: unit.locked ? .5 : 1,
-                  }}>
-                    <div style={{display:'flex',alignItems:'center',gap:12}}>
-                      <span style={{fontSize:'1.8rem'}}>{unit.emoji}</span>
-                      <div style={{flex:1}}>
-                        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:2}}>
-                          <span style={{fontSize:'1rem',fontWeight:800}}>{unit.title}</span>
-                          <span style={{fontSize:11,fontWeight:800,padding:'2px 8px',borderRadius:99,
-                            background:unit.locked?'var(--surface3)':`${unit.color}33`,
-                            color:unit.locked?'var(--t3)':unit.color,
-                            border:`1px solid ${unit.locked?'var(--border)':unit.color}`}}>
-                            {unit.cefr}
-                          </span>
-                        </div>
-                        <div style={{fontSize:13,fontWeight:600,color:'var(--t3)'}}>{unit.subtitle}</div>
-                      </div>
-                      {unit.locked&&<div style={{fontSize:20}}>🔒</div>}
-                    </div>
-                    {unit.locked&&<div style={{fontSize:12,fontWeight:700,color:'var(--t3)',marginTop:8}}>
-                      Unlock at ELO {unit.eloMin} · You are at {elo}
-                    </div>}
-                  </div>
-
-                  {/* Lessons */}
-                  {!unit.locked && (
-                    <div style={{display:'flex',flexDirection:'column',gap:8,paddingLeft:12,borderLeft:`3px solid ${unit.color}44`}}>
-                      {unit.lessons.map((lesson,li)=>(
-                        <div key={lesson.id} style={{
-                          display:'flex',alignItems:'center',gap:12,
-                          background: lesson.locked?'var(--surface)':'var(--surface2)',
-                          border:`1.5px solid ${lesson.complete?unit.color:'var(--border)'}`,
-                          borderRadius:12,padding:'12px 14px',
-                          opacity: lesson.locked ? .45 : 1,
-                          transition:'all .15s',cursor:lesson.locked?'not-allowed':'pointer',
-                        }}
-                        onClick={()=>{
-                          if (lesson.locked) return
-                          const uid = courseLessonIndexToUnitId(unit.cefr, li)
-                          setCurrentUnitId(uid)
-                          api.saveSetting('current_unit', uid).catch(()=>{})
-                          setUnitStats({ answered: 0, correct: 0 })
-                          setMode('learn')
-                          resetQ(0)
-                          toast.success(`Learn: ${lesson.title}`)
-                        }}>
-                          {/* Icon */}
-                          <div style={{
-                            width:40,height:40,borderRadius:10,flexShrink:0,
-                            background: lesson.complete ? unit.color : 'var(--surface3)',
-                            display:'flex',alignItems:'center',justifyContent:'center',
-                            fontSize:18,
-                            boxShadow: lesson.complete ? `0 0 12px ${unit.color}66` : 'none',
-                          }}>
-                            {lesson.locked?'🔒':lesson.complete?'✓':LESSON_TYPE_ICONS[lesson.type]}
-                          </div>
-                          {/* Text */}
-                          <div style={{flex:1}}>
-                            <div style={{fontSize:14,fontWeight:700,marginBottom:2,color:lesson.locked?'var(--t3)':'var(--text)'}}>
-                              {lesson.title}
-                            </div>
-                            <div style={{fontSize:11,fontWeight:600,color:'var(--t3)',display:'flex',gap:8}}>
-                              <span style={{color:LESSON_TYPE_COLORS[lesson.type]}}>{lesson.type}</span>
-                              <span>+{lesson.xp} XP</span>
-                            </div>
-                          </div>
-                          {/* Crown */}
-                          {(lesson.crown ?? 0)>0&&<div style={{fontSize:18}}>
-                            {(lesson.crown ?? 0)===3?'🥇':(lesson.crown ?? 0)===2?'🥈':'🥉'}
-                          </div>}
-                          {!lesson.complete&&!lesson.locked&&<div style={{fontSize:14,color:'var(--t3)',fontWeight:700}}>›</div>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+          {/* map tab → redirect to learn skill tree */}
+          {mode==="map" && (() => { switchMode("learn"); return null })()}
 
           {/* ── GRAMMAR REFERENCE ── */}
           {mode==='grammar' && (
