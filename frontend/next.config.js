@@ -25,6 +25,14 @@ const withPWA = require('next-pwa')({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: false, // off to prevent double-mount in dev
+  // Avoid webpack disk-cache rename errors (ENOENT on .pack.gz_) in dev — common with
+  // iCloud/Downloads or multiple `next dev` instances fighting over `.next/cache`.
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.cache = { type: 'memory' }
+    }
+    return config
+  },
   // Allow access from local network and Cloudflare tunnel
   async headers() {
     return [

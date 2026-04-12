@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import type { StoryDetail } from '../lib/api'
 import { api } from '../lib/api'
+import WordHints from './WordHints'
 import toast from 'react-hot-toast'
 
 type Phase = 'read' | 'quiz' | 'done'
@@ -50,6 +51,14 @@ export default function StoryPlayer({
     setSubmitting(true)
     try {
       await api.completeStory(detail.id, score, total)
+      void api
+        .logLessonMemory({
+          lesson_id: `story:${detail.id}`,
+          title:     detail.title_fr,
+          source:    'story',
+          detail:    `Score ${score}/${total}`,
+        })
+        .catch(() => {})
       onCompleted()
     } catch {
       toast.error('Could not save story result')
@@ -82,7 +91,9 @@ export default function StoryPlayer({
           }}
         >
           <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--t3)', marginBottom: 6 }}>{line.speaker}</div>
-          <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>{line.french}</div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>
+            <WordHints text={line.french} pair="fr|en" />
+          </div>
           {showEn && <div style={{ fontSize: 14, color: 'var(--t2)' }}>{line.english}</div>}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -149,7 +160,9 @@ export default function StoryPlayer({
           ← Exit
         </button>
         <div style={{ fontSize: 13, color: 'var(--t3)', marginBottom: 8 }}>Question {qIdx + 1} / {questions.length}</div>
-        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>{q.question_fr}</div>
+        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>
+          <WordHints text={q.question_fr} pair="fr|en" />
+        </div>
         <div style={{ fontSize: 14, color: 'var(--t2)', marginBottom: 16 }}>{q.question_en}</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {q.options.map((opt, i) => (

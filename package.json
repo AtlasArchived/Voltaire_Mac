@@ -28,6 +28,7 @@
       "package.json"
     ],
     "mac": {
+      "icon": "build/Voltaire.icns",
       "target": [
         "dmg"
       ],

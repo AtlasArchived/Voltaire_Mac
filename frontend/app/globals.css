@@ -895,3 +895,27 @@ body {
   100% { transform: scale(1); }
 }
 .tile-pop { animation: tilePop .2s ease; }
+
+/* Hover word gloss (drill + stories) */
+.word-hint {
+  cursor: help;
+  border-bottom: 1px dotted rgba(79, 156, 249, 0.45);
+  transition: background 0.12s ease;
+}
+.word-hint:hover {
+  background: rgba(79, 156, 249, 0.12);
+  border-bottom-color: rgba(79, 156, 249, 0.75);
+}
+.word-hint-gloss {
+  pointer-events: none;
+  max-width: min(320px, 92vw);
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}

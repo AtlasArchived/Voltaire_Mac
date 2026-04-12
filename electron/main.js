@@ -5,6 +5,7 @@ const http = require('http')
 
 const ROOT = path.resolve(__dirname, '..')
 const FRONTEND_DIR = path.join(ROOT, 'frontend')
+const APP_ICON = path.join(FRONTEND_DIR, 'public', 'icons', 'icon-512.png')
 const BACKEND_PORT = 8000
 const FRONTEND_PORT = 3000
 
@@ -62,6 +63,13 @@ function wireLogs(name, proc) {
 }
 
 async function startServices() {
+  const external = process.env.VOLTAIRE_EXTERNAL_SERVER === '1'
+  if (external) {
+    await waitForUrl(`http://127.0.0.1:${BACKEND_PORT}/api/health`, 30000)
+    await waitForUrl(`http://127.0.0.1:${FRONTEND_PORT}`, 45000)
+    return
+  }
+
   backendProc = run('python3', ['-m', 'uvicorn', 'backend.main:app', '--host', '127.0.0.1', '--port', String(BACKEND_PORT)], ROOT)
   wireLogs('backend', backendProc)
 
@@ -82,6 +90,7 @@ async function createMainWindow() {
     minWidth: 980,
     minHeight: 700,
     title: 'Voltaire',
+    icon: APP_ICON,
     autoHideMenuBar: true,
     backgroundColor: '#0d1117',
     webPreferences: {
@@ -109,6 +118,11 @@ app.on('activate', () => {
 
 app.whenReady().then(async () => {
   try {
+    if (process.platform === 'darwin' && app.dock) {
+      try {
+        app.dock.setIcon(APP_ICON)
+      } catch (_) {}
+    }
     await startServices()
     await createMainWindow()
   } catch (err) {
