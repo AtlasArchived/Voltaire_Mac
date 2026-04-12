@@ -1,0 +1,37 @@
+{
+  "name": "voltaire-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "desktop": "electron .",
+    "desktop:dev": "electron .",
+    "desktop:build-frontend": "cd frontend && npm run build",
+    "dist:mac": "npm run desktop:build-frontend && electron-builder --mac dmg"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.voltaire.desktop",
+    "productName": "Voltaire",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "backend/**/*",
+      "frontend/**/*",
+      ".env",
+      "cato_mind.db",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.education"
+    }
+  }
+}
