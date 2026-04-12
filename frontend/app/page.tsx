@@ -309,8 +309,8 @@ export default function App() {
     return generatedQuestions.length > 0 ? [...generatedQuestions, ...base] : base
   }
 
-  function resetQ(idx: number, useAbsolute = false) {
-    const pool = useAbsolute ? QUESTIONS : getEligibleQuestions()
+  function resetQ(idx: number, useAbsolute = false, overridePool?: DrillQ[]) {
+    const pool = overridePool ?? (useAbsolute ? QUESTIONS : getEligibleQuestions())
     const q = pool[idx % pool.length]
     setQi(idx)
     setAnswered(false)
@@ -669,12 +669,15 @@ export default function App() {
         toast.error('No questions generated — try again in a moment.')
         return
       }
-      // Cast to DrillQ (backend returns compatible shape)
       const qs = res.questions as unknown as DrillQ[]
       setGeneratedQuestions(qs)
-      toast.success(`Generated ${qs.length} practice questions for "${tag}"`)
       setShowTree(false)
-      resetQ(0) // index 0 in eligible pool → first generated question
+      // Pass the pool explicitly — setGeneratedQuestions is async (state update not yet flushed),
+      // so getEligibleQuestions() inside resetQ would still see the old empty array.
+      // By passing overridePool directly we bypass the stale closure entirely.
+      const livePool = [...qs, ...getEligibleQuestions()]
+      resetQ(0, false, livePool)
+      toast.success(`Generated ${qs.length} practice questions for "${tag}" ⚡`)
     } catch (e) {
       toast.error('Could not generate practice: ' + String(e))
     } finally {

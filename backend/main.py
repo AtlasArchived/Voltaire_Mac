@@ -395,6 +395,11 @@ def _ai_json_or_none(prompt: str):
         txt = (result or {}).get("text", "").strip()
         if not txt:
             return None
+        # Strip markdown code fences the model sometimes wraps around JSON
+        import re as _re
+        txt = _re.sub(r"^```(?:json)?\s*", "", txt, flags=_re.IGNORECASE)
+        txt = _re.sub(r"\s*```$", "", txt)
+        txt = txt.strip()
         return json.loads(txt)
     except Exception:
         return None
