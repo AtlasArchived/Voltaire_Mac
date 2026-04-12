@@ -560,6 +560,7 @@ export default function App() {
     const idx = pool.findIndex(q => q.prompt === prompt)
     if (idx >= 0) {
       setMode('learn')
+      setShowTree(false)
       const targetUnit = pool[idx].unitId
       if (targetUnit) setCurrentUnitId(targetUnit)
       resetQ(idx, true)
@@ -583,6 +584,7 @@ export default function App() {
       endAt: now + 2 * 60 * 1000,
     })
     setMode('learn')
+    setShowTree(false)
     resetQ(indices[0], true)
   }
 
