@@ -364,7 +364,8 @@ export default function App() {
 
   function submitAnswer(userAnswer: string) {
     if (answered) return
-    const pool = getEligibleQuestions()
+    // During a checkpoint, qi is absolute into QUESTIONS; otherwise use eligible subset.
+    const pool = checkpointSession ? QUESTIONS : getEligibleQuestions()
     const q = pool[qi % pool.length]
     const ok = answersEquivalent(userAnswer, q.answer)
     const responseMs = Date.now() - questionStartedAt
@@ -672,8 +673,14 @@ export default function App() {
   const cefrCls = (i:number) => { const next=CEFR[i+1]?.min??9999; return elo>=next?'done':elo>=CEFR[i].min?'active':'locked' }
 
   const eligibleQuestions = getEligibleQuestions()
-  const q = eligibleQuestions[qi % eligibleQuestions.length]
-  const qPct = Math.round((qi % eligibleQuestions.length) / eligibleQuestions.length * 100)
+  // During a checkpoint session, qi is an absolute index into QUESTIONS (the full bank).
+  // Outside a checkpoint, qi is relative to eligibleQuestions.
+  const q = checkpointSession
+    ? QUESTIONS[qi % QUESTIONS.length]
+    : eligibleQuestions[qi % eligibleQuestions.length]
+  const qPct = checkpointSession
+    ? Math.round(((checkpointSession.pos + 1) / checkpointSession.indices.length) * 100)
+    : Math.round((qi % eligibleQuestions.length) / eligibleQuestions.length * 100)
 
   const filteredGrammar = GRAMMAR.filter(r => {
     const matchSearch = !gramSearch || r.title.toLowerCase().includes(gramSearch.toLowerCase()) ||
