@@ -183,10 +183,54 @@ const a1u3Phrases: LessonPhrase[] = [
 ]
 
 // ─────────────────────────────────────────────────────────────────────────────
+// A1 Unit 4 — "Café Culture"
+// ─────────────────────────────────────────────────────────────────────────────
+const X = 'a1-u4'
+const a1u4Practice: LPQ[] = [
+  t(X, 'en-fr', 'I would like a coffee.',                              'Je voudrais un café',               "Use 'un' — café is masculine. Don't forget the accent on é."),
+  t(X, 'fr-en', "Translate: \"L'addition, s'il vous plaît.\"",         'The bill please',                   "French waiters will never bring the bill until you ask. It's considered rude to rush you."),
+  m(X, 'Which phrase is the most polite way to order?',                'Je voudrais',                       ['Je veux','Je voudrais','Donne-moi',"J'ai"], "'Je veux' (I want) sounds demanding. 'Je voudrais' (I would like) is the conditional — golden rule of French manners."),
+  t(X, 'fr-en', 'Translate: "un café"',                               'an espresso',                       "In France, 'un café' is always an espresso. For filter coffee ask for 'un café allongé'."),
+  l(X, "Une carafe d'eau, s'il vous plaît.",                           'A pitcher of water',                "By law, French restaurants must provide free tap water. Never pay for bottled unless you want bubbles."),
+  a(X, "Build: 'A coffee please'",                                     "Un café s'il vous plaît",           ["Un","café","s'il","vous","plaît"], "Standard word order: Item + Please."),
+  f(X, 'Je voudrais un pain ___ chocolat.',                            'au',                                "'Au' = à + le. Used for flavors and fillings: pain au chocolat, café au lait."),
+  m(X, 'How do you get a male waiter\'s attention?',                   'Monsieur',                          ['Garçon','Monsieur','Hé','Homme'], "Never say 'Garçon' (boy) — it's outdated and offensive. 'Monsieur' or 'Madame' is the modern standard."),
+  e(X, 'Je voudrais une croissant.',                                   'Je voudrais un croissant',          "Croissant is masculine. From Old French 'creissant' (crescent moon shape). Gender agreement matters even at breakfast."),
+  t(X, 'en-fr', 'Thank you very much, sir.',                          'Merci beaucoup monsieur',            "Add 'monsieur' or 'madame' after merci for extra politeness — and extra French credibility."),
+  t(X, 'fr-en', "Translate: \"C'est combien ?\"",                     'How much is it?',                   "'Combien' sounds like 'combine' — you're asking for the combined total."),
+  l(X, 'Un thé ou un café ?',                                         'A tea or a coffee',                  "'Ou' = or. Don't confuse with 'où' (where) — same sound, completely different word."),
+  a(X, "Build: 'How much is it please?'",                             "C'est combien s'il vous plaît",     ["C'est","combien","s'il","vous","plaît"], "Use this when a price isn't on the menu."),
+  f(X, 'Je voudrais ___ thé, s\'il vous plaît.',                      'un',                                "Thé is masculine. Pronounced 'tay' — like the English letter T."),
+  e(X, "Je veux un café s'il te plaît.",                              "Je voudrais un café s'il vous plaît","Two errors: 'Je veux' is too blunt for a waiter; 'te' is informal. Always 'voudrais' + 'vous' with café staff."),
+]
+
+const a1u4Test: LPQ[] = [
+  t(X, 'fr-en', 'Je voudrais un pain au chocolat.',                   'I would like a chocolate pastry',   "Literally 'bread with chocolate'. In the South-West it's called 'une chocolatine' — a fierce regional debate."),
+  t(X, 'en-fr', 'The bill, please.',                                  "L'addition s'il vous plaît",        "Always 'l'' before 'addition' — it starts with a vowel. Think: the waiter is doing the math 'addition'."),
+  m(X, 'What is the free water called?',                              'Une carafe d\'eau',                 ["Une bouteille d'eau","Une carafe d'eau","Un verre d'eau","L'eau minérale"], "'Carafe' is the specific term for the free tap water pitcher."),
+  m(X, 'Which of these is masculine?',                                'Café',                              ['Addition','Carafe','Eau','Café'], "Addition, carafe, and eau are all feminine. Café is the odd one out."),
+  a(X, "Build: 'I would like a pitcher of water'",                   "Je voudrais une carafe d'eau",      ['Je','voudrais','une','carafe',"d'eau"], "Perfect phrase for a budget-friendly French lunch."),
+  f(X, "S'il ___ plaît.",                                            'vous',                              "Literally: 'If it to you pleases.' Always 'vous' with strangers and service staff."),
+  e(X, 'Je voudrais un eau.',                                         'Je voudrais une eau',               "Eau is feminine — even though it sounds like just 'O', it needs 'une'."),
+  e(X, 'Merci beaucoup, Garçon.',                                    'Merci beaucoup monsieur',            "Avoid 'Garçon' — it treats the professional like a servant. 'Monsieur' is respectful and modern."),
+  l(X, 'C\'est huit euros, monsieur.',                               'Eight euros',                        "'Huit' (8) is pronounced 'weet' — like the English word 'wheat'."),
+  t(X, 'fr-en', "Translate: \"S'il vous plaît\"",                    'Please (formal)',                    "Literally 'If it pleases you.' Use 'tu' form (s'il te plaît) only with friends and children."),
+]
+
+const a1u4Phrases: LessonPhrase[] = [
+  { fr: 'Un café',              en: 'An espresso',          note: "In France, 'un café' is always a small espresso — never a mug. Ask for 'un allongé' for a longer drink." },
+  { fr: 'Je voudrais…',         en: 'I would like…',        note: "The conditional of 'vouloir'. More polite than 'Je veux' (I want), which sounds like a demand to French ears." },
+  { fr: "S'il vous plaît",      en: 'Please (formal)',      note: "Literally 'If it pleases you.' Always use 'vous' with café and restaurant staff — never 'te'." },
+  { fr: "L'addition",           en: 'The bill',             note: "From the math term 'addition'. The waiter adds it all up — and won't bring it until you ask." },
+  { fr: "Une carafe d'eau",     en: 'A pitcher of water',   note: "By French law, restaurants must give you tap water for free. 'Carafe' signals you want the free pitcher, not bottled." },
+]
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Export
 // ─────────────────────────────────────────────────────────────────────────────
 export const LESSON_PLANS: Record<string, LessonPlanData> = {
-  'a1-u1': { title: 'The First Encounter',  theme: 'Greetings & Introductions',         phrases: a1u1Phrases, practice: a1u1Practice, test: a1u1Test },
-  'a1-u2': { title: 'The Rhythm of Life',   theme: 'Numbers, Dates & Time',             phrases: a1u2Phrases, practice: a1u2Practice, test: a1u2Test },
+  'a1-u1': { title: 'The First Encounter',  theme: 'Greetings & Introductions',                  phrases: a1u1Phrases, practice: a1u1Practice, test: a1u1Test },
+  'a1-u2': { title: 'The Rhythm of Life',   theme: 'Numbers, Dates & Time',                      phrases: a1u2Phrases, practice: a1u2Practice, test: a1u2Test },
   'a1-u3': { title: 'All in the Family',    theme: 'Family members, possessives & relationships', phrases: a1u3Phrases, practice: a1u3Practice, test: a1u3Test },
+  'a1-u4': { title: 'Café Culture',         theme: 'Ordering food & drink, polite requests',     phrases: a1u4Phrases, practice: a1u4Practice, test: a1u4Test },
 }
