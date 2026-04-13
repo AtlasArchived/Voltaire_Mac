@@ -282,6 +282,13 @@ export interface GeneratedDrillQ {
   isGenerated?: boolean
 }
 
+export interface LeaderboardEntry {
+  rank: number
+  name: string
+  xp: number
+  isCurrentUser: boolean
+}
+
 // ── API calls ─────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -423,6 +430,42 @@ export const api = {
     get<{ text: string }>(
       `/translate/hover?q=${encodeURIComponent(word)}&pair=${encodeURIComponent(pair)}`,
     ),
+}
+
+// ── Mock leaderboard ─────────────────────────────────────────────────────────
+
+const MOCK_WEEK: LeaderboardEntry[] = [
+  { rank: 1,  name: 'Amélie Fontaine',  xp: 4820, isCurrentUser: false },
+  { rank: 2,  name: 'Lucas Bertrand',   xp: 4410, isCurrentUser: false },
+  { rank: 3,  name: 'Sophie Marchand',  xp: 3990, isCurrentUser: false },
+  { rank: 4,  name: 'Hugo Leclerc',     xp: 3540, isCurrentUser: false },
+  { rank: 5,  name: 'You',              xp: 3120, isCurrentUser: true  },
+  { rank: 6,  name: 'Camille Dubois',   xp: 2870, isCurrentUser: false },
+  { rank: 7,  name: 'Nathan Rousseau',  xp: 2640, isCurrentUser: false },
+  { rank: 8,  name: 'Chloé Lambert',    xp: 2210, isCurrentUser: false },
+  { rank: 9,  name: 'Théo Girard',      xp: 1980, isCurrentUser: false },
+  { rank: 10, name: 'Inès Moreau',      xp: 1750, isCurrentUser: false },
+]
+
+const MOCK_ALLTIME: LeaderboardEntry[] = [
+  { rank: 1,  name: 'Sophie Marchand',  xp: 52800, isCurrentUser: false },
+  { rank: 2,  name: 'Amélie Fontaine',  xp: 48400, isCurrentUser: false },
+  { rank: 3,  name: 'Hugo Leclerc',     xp: 43100, isCurrentUser: false },
+  { rank: 4,  name: 'Camille Dubois',   xp: 39700, isCurrentUser: false },
+  { rank: 5,  name: 'Lucas Bertrand',   xp: 36200, isCurrentUser: false },
+  { rank: 6,  name: 'Chloé Lambert',    xp: 29500, isCurrentUser: false },
+  { rank: 7,  name: 'Nathan Rousseau',  xp: 24800, isCurrentUser: false },
+  { rank: 8,  name: 'You',              xp: 21300, isCurrentUser: true  },
+  { rank: 9,  name: 'Théo Girard',      xp: 18600, isCurrentUser: false },
+  { rank: 10, name: 'Inès Moreau',      xp: 14400, isCurrentUser: false },
+]
+
+export function getLeaderboard(period: 'week' | 'alltime'): Promise<LeaderboardEntry[]> {
+  return new Promise(resolve => {
+    setTimeout(() => {
+      resolve(period === 'alltime' ? MOCK_ALLTIME : MOCK_WEEK)
+    }, 220)
+  })
 }
 
 // ── Streaming helper ──────────────────────────────────────────────────────────

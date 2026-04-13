@@ -12,6 +12,10 @@ import SkillTree   from '../components/SkillTree'
 import WordHints   from '../components/WordHints'
 import MemoryLog   from '../components/MemoryLog'
 import { AchievementQueue } from '../components/AchievementToast'
+import DailyStreakModal, { shouldShowStreakModal } from '../components/DailyStreakModal'
+import LevelUpModal from '../components/LevelUpModal'
+import Leaderboard from '../components/Leaderboard'
+import WordOfTheDay from '../components/WordOfTheDay'
 import toast from 'react-hot-toast'
 import confetti from 'canvas-confetti'
 
@@ -25,7 +29,7 @@ interface Achievement {
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type Mode = 'learn'|'chat'|'mathieu'|'voice'|'stories'|'map'|'grammar'|'review'|'memory'|'settings'
+type Mode = 'learn'|'chat'|'mathieu'|'voice'|'stories'|'map'|'grammar'|'review'|'memory'|'settings'|'leaderboard'
 
 interface Msg   { role:'assistant'|'user'; text:string }
 interface ArrangeAiFeedback { corrected: string; explanation: string; next_step?: string }
@@ -193,6 +197,14 @@ export default function App() {
   const shownMilestonesRef = useRef<Set<number>>(new Set())
   const shownAchievementsRef = useRef<Set<string>>(new Set())
 
+  // New wave-3 state
+  const [showStreakModal, setShowStreakModal] = useState(false)
+  const [levelUpOld, setLevelUpOld] = useState<string|null>(null)
+  const [levelUpNew, setLevelUpNew] = useState<string|null>(null)
+  const [showShortcuts, setShowShortcuts] = useState(false)
+  const [lightMode, setLightMode] = useState(false)
+  const prevCefrRef = useRef<string|null>(null)
+
   function addAchievement(a: Achievement) {
     const key = a.id
     if (shownAchievementsRef.current.has(key)) return
@@ -337,6 +349,12 @@ export default function App() {
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
 
+      // ? key: toggle shortcut help modal
+      if (e.key === '?') {
+        setShowShortcuts(s => !s)
+        return
+      }
+
       if (mode === 'learn' && !showTree) {
         const pool = checkpointSession ? QUESTIONS : getEligibleQuestions()
         const q = pool[qi % pool.length]
@@ -373,6 +391,39 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKey)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, showTree, answered, qi, arranged, checkpointSession])
+
+  // ── Light/dark mode sync ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (lightMode) {
+      document.body.classList.add('light-mode')
+    } else {
+      document.body.classList.remove('light-mode')
+    }
+  }, [lightMode])
+
+  // ── Daily streak modal ────────────────────────────────────────────────────
+  useEffect(() => {
+    if (ready && streak && shouldShowStreakModal(streak.current_streak)) {
+      const t = setTimeout(() => setShowStreakModal(true), 900)
+      return () => clearTimeout(t)
+    }
+  }, [ready, streak])
+
+  // ── Level-up detection ────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!learner) return
+    const CEFR_ORDER = ['A1','A2','B1','B2','C1','C2'] as const
+    const currentCefr = CEFR_ORDER.slice().reverse().find(l => (learner.elo || 800) >= CEFR_ELO[l].min) ?? 'A1'
+    if (prevCefrRef.current && prevCefrRef.current !== currentCefr) {
+      const oldIdx = CEFR_ORDER.indexOf(prevCefrRef.current as typeof CEFR_ORDER[number])
+      const newIdx = CEFR_ORDER.indexOf(currentCefr as typeof CEFR_ORDER[number])
+      if (newIdx > oldIdx) {
+        setLevelUpOld(prevCefrRef.current)
+        setLevelUpNew(currentCefr)
+      }
+    }
+    prevCefrRef.current = currentCefr
+  }, [learner?.elo])
 
   // ── Welcome back message ──────────────────────────────────────────────────
   useEffect(() => {
@@ -970,15 +1021,16 @@ export default function App() {
   const course = buildCourse(elo, learner?.xp||0)
 
   const NAV = [
-    {id:'learn'  as Mode,icon:'🎯',label:'Learn'},
-    {id:'chat'   as Mode,icon:'✍️',label:'Tutor'},
-    {id:'mathieu'as Mode,icon:'☕',label:'Mathieu'},
-    {id:'voice'  as Mode,icon:'🎙️',label:'Voice'},
-    {id:'stories'as Mode,icon:'📚',label:'Stories'},
-    {id:'review' as Mode,icon:'🔁',label:'Review'},
-    {id:'memory' as Mode,icon:'📓',label:'Memory'},
-    {id:'map'    as Mode,icon:'🗺️',label:'Course'},
-    {id:'grammar'as Mode,icon:'📐',label:'Grammar'},
+    {id:'learn'       as Mode,icon:'🎯',label:'Learn'},
+    {id:'chat'        as Mode,icon:'✍️',label:'Tutor'},
+    {id:'mathieu'     as Mode,icon:'☕',label:'Mathieu'},
+    {id:'voice'       as Mode,icon:'🎙️',label:'Voice'},
+    {id:'stories'     as Mode,icon:'📚',label:'Stories'},
+    {id:'review'      as Mode,icon:'🔁',label:'Review'},
+    {id:'leaderboard' as Mode,icon:'🏆',label:'Leaderboard'},
+    {id:'memory'      as Mode,icon:'📓',label:'Memory'},
+    {id:'map'         as Mode,icon:'🗺️',label:'Course'},
+    {id:'grammar'     as Mode,icon:'📐',label:'Grammar'},
   ]
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -986,6 +1038,74 @@ export default function App() {
     <div className="app">
       {xpPop!==null && <XpPop xp={xpPop} onDone={()=>setXpPop(null)}/>}
       <AchievementQueue queue={achievements} onDismiss={dismissAchievement} />
+
+      {/* Daily streak modal */}
+      <AnimatePresence>
+        {showStreakModal && streak && (
+          <DailyStreakModal
+            streak={streak.current_streak}
+            onClose={() => setShowStreakModal(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Level-up modal */}
+      <AnimatePresence>
+        {levelUpOld && levelUpNew && (
+          <LevelUpModal
+            oldLevel={levelUpOld}
+            newLevel={levelUpNew}
+            onClose={() => { setLevelUpOld(null); setLevelUpNew(null) }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Keyboard shortcut help modal */}
+      <AnimatePresence>
+        {showShortcuts && (
+          <motion.div
+            className="shortcuts-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowShortcuts(false)}
+          >
+            <motion.div
+              className="shortcuts-modal"
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 10 }}
+              transition={{ type: 'spring', stiffness: 340, damping: 28 }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="shortcuts-title">⌨️ Keyboard Shortcuts</div>
+              {[
+                { key: '?',      desc: 'Show this help modal' },
+                { key: 'Escape', desc: 'Close modal / go back to skill tree' },
+                { key: '1–4',    desc: 'Select MCQ answer A–D' },
+                { key: 'Enter',  desc: 'Submit arranged sentence / continue' },
+              ].map(({ key, desc }) => (
+                <div key={key} className="shortcut-row">
+                  <span>{desc}</span>
+                  <span className="shortcut-key">{key}</span>
+                </div>
+              ))}
+              <button
+                onClick={() => setShowShortcuts(false)}
+                style={{
+                  marginTop: 20, width: '100%', padding: '11px',
+                  borderRadius: 'var(--r-sm)', background: 'var(--surface2)',
+                  border: '1.5px solid var(--border2)', color: 'var(--t2)',
+                  fontFamily: 'var(--font)', fontSize: 14, fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                Close
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Sidebar */}
       <nav className="sidebar">
@@ -1098,6 +1218,9 @@ export default function App() {
             } as const
             return (
               <div style={{paddingBottom:64}}>
+                {/* Word of the Day */}
+                <WordOfTheDay />
+
                 {/* AI Coach banner */}
                 {aiCoachPlan && (
                   <div style={{padding:'16px 20px 4px'}}>
@@ -1801,6 +1924,9 @@ export default function App() {
 
           {mode === 'memory' && <MemoryLog />}
 
+          {/* ── LEADERBOARD ── */}
+          {mode === 'leaderboard' && <Leaderboard />}
+
           {/* ── SETTINGS ── */}
           {mode==='settings' && (
             <div style={{height:'100%',overflowY:'auto',padding:'20px'}}>
@@ -1928,6 +2054,28 @@ export default function App() {
                   </select>
                   <button className="check-btn ready" style={{padding:'10px 12px'}} disabled={savingSettings} onClick={()=>saveSetting('correction_strictness', settingsMap.correction_strictness || 'medium')}>
                     Save Strictness
+                  </button>
+                </div>
+
+                {/* ── Light / Dark mode toggle ── */}
+                <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12,padding:14}}>
+                  <div style={{fontSize:12,fontWeight:700,color:'var(--t3)',marginBottom:8}}>Appearance</div>
+                  <button
+                    className="theme-toggle-btn"
+                    onClick={() => setLightMode(m => !m)}
+                  >
+                    {lightMode ? '🌙 Switch to Dark Mode' : '☀️ Switch to Light Mode'}
+                  </button>
+                </div>
+
+                {/* ── Keyboard shortcuts info ── */}
+                <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12,padding:14}}>
+                  <div style={{fontSize:12,fontWeight:700,color:'var(--t3)',marginBottom:8}}>Keyboard Shortcuts</div>
+                  <button
+                    className="theme-toggle-btn"
+                    onClick={() => setShowShortcuts(true)}
+                  >
+                    ⌨️ View Shortcuts <span style={{fontSize:11,color:'var(--t3)',marginLeft:4}}>(press ?)</span>
                   </button>
                 </div>
 
