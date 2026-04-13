@@ -312,6 +312,49 @@ const a1u6Phrases: LessonPhrase[] = [
 ]
 
 // ─────────────────────────────────────────────────────────────────────────────
+// A1 Unit 7 — "From Dawn to Dusk"
+// ─────────────────────────────────────────────────────────────────────────────
+const A7 = 'a1-u7'
+const a1u7Practice: LPQ[] = [
+  t(A7, 'en-fr', 'I wake up.',                                          'Je me réveille',                        "Reflexive verbs need 'me' — the action is done to yourself. From ré- (again) + veiller (to watch)."),
+  t(A7, 'fr-en', 'Je me lève tôt.',                                     'I get up early',                        "'Tôt' sounds like 'toe'. The accent marks a pronunciation shift. Think: stubbing your toe getting up early."),
+  t(A7, 'en-fr', 'She gets dressed.',                                   "Elle s'habille",                        "'Se' becomes 's'' before a vowel or silent h — keeps the sound flowing: s'habille, not se habille."),
+  m(A7, "Choose the correct phrase for 'You wash yourself' (informal):", 'Tu te laves',                          ['Tu laves','Tu te laves','Tu me laves','Tu se laves'], "Reflexive pronouns match the subject: je me, tu te, il/elle se. 'Tu laves' means you are washing something else."),
+  m(A7, "Which time expression means 'The evening'?",                   'Le soir',                               ['Le matin',"L'après-midi",'Le soir','La nuit'], "Culture: In France, 'le soir' is for the main family meal — often lasting 2 hours or more."),
+  a(A7, "Build: 'First I get up'",                                      "D'abord je me lève",                    ["D'abord",'je','me','lève'], "'D'abord' = from à + bord (the edge/rim). You are starting at the very edge of your day."),
+  a(A7, "Build: 'Then he brushes his teeth'",                           'Ensuite il se brosse les dents',        ['Ensuite','il','se','brosse','les','dents'], "We use 'les dents' (the teeth) because 'se' already signals they are his own teeth."),
+  f(A7, 'Je ___ réveille à huit heures.',                               'me',                                    "Without 'me', the sentence means 'I am waking someone else up'. The pronoun is not optional."),
+  f(A7, 'Enfin, il ___ couche.',                                        'se',                                    "'Il' always matches with 'se' in reflexive verbs. Me, te, se, nous, vous, se — in that order."),
+  e(A7, 'Je lève à sept heures.',                                       'Je me lève à sept heures',              "Classic English-speaker error: French requires 'I get myself up' — the reflexive 'me' is mandatory."),
+  e(A7, 'Je te lave le matin.',                                         'Je me lave le matin',                   "Unless you are washing a baby or a car, use 'me'. 'Je te lave' means you are washing someone else."),
+  l(A7, 'Enfin, je me couche.',                                         'Finally',                               "'Enfin' signals the end of any sequence. It often carries a sense of relief — finally hitting the pillow."),
+  l(A7, "Je me repose l'après-midi.",                                   'Resting',                               "Culture: 'Se reposer' after lunch is a vital part of daily rhythm in many French-speaking regions."),
+  t(A7, 'fr-en', 'Translate: "se lever, se réveiller, se coucher, se reposer"', 'to get up, to wake up, to go to bed, to rest', "All reflexive — subject + matching pronoun + verb. The structure never changes."),
+  t(A7, 'fr-en', "Translate: \"d'abord, ensuite, enfin, tous les jours\"", 'first, then, finally, every day',  "These four words turn a list of verbs into a story. 'Ensuite' from 'suite' — rooms following each other."),
+]
+
+const a1u7Test: LPQ[] = [
+  t(A7, 'en-fr', 'Every day I rest.',                                   'Tous les jours je me repose',           "'Tous les jours' can go at the start or end of the sentence."),
+  t(A7, 'fr-en', 'Il se brosse les dents le soir.',                    'He brushes his teeth in the evening',   "Body parts take the definite article (les dents, not ses dents) with reflexive verbs."),
+  m(A7, "How do you say 'Finally, I go to bed'?",                      'Enfin, je me couche',                   ['Ensuite, je me couche',"D'abord, je me couche",'Enfin, je me couche','Enfin, je couche'], "'Enfin' = finally. The last option drops the reflexive 'me' — a fatal error."),
+  m(A7, "Choose the correct conjugation of 'se lever' for 'Il':",       'Il se lève',                            ['Il se lave','Il se lève','Il me lève','Il lève'], "The è accent (grave) opens the vowel sound. 'Il se lave' is 'he washes' — a different verb entirely."),
+  a(A7, "Build: 'Then she gets dressed'",                              "Ensuite elle s'habille",                 ['Ensuite','elle',"s'habille"], "The elided s' before a vowel/silent h is mandatory — always write s'habille, never se habille."),
+  f(A7, 'Le matin, je ___ réveille tôt.',                              'me',                                    "'Me' is the first-person reflexive pronoun. It acts as the object of 'réveiller'."),
+  e(A7, 'Je me couche tard le nuit.',                                   'Je me couche tard la nuit',             "'Nuit' is feminine → 'la nuit'. 'Le nuit' does not exist."),
+  e(A7, 'Tu laves le soir.',                                            'Tu te laves le soir',                   "Missing the reflexive 'te'. Without it, you are washing something else entirely."),
+  l(A7, 'Je me lève à six heures.',                                    'Six o\'clock',                           "Combining reflexive verbs with time expressions is the heart of describing a daily routine."),
+  t(A7, 'fr-en', "Translate: \"le matin, l'après-midi, le soir, la nuit\"", 'the morning, the afternoon, the evening, the night', "Note: 'la nuit' is feminine. All others are masculine. Each carries its own cultural rhythm in France."),
+]
+
+const a1u7Phrases: LessonPhrase[] = [
+  { fr: 'Je me réveille',          en: 'I wake up',              note: "From ré- (again) + veiller (to watch). To 'watch again' — re-entering the waking world." },
+  { fr: 'Je me lève',              en: 'I get up',               note: "The è signals a pronunciation shift. NEVER drop the 'me' — without it, you are lifting something else." },
+  { fr: "D'abord / ensuite / enfin", en: 'First / then / finally', note: "The narrative backbone of any routine. These three words turn verbs into a story." },
+  { fr: 'Je me couche',            en: 'I go to bed',            note: "Think: 'couch' — putting yourself on a surface to rest. The reflexive shows you are doing it to yourself." },
+  { fr: "L'apéro",                 en: 'Pre-dinner drinks',      note: "Short for apéritif. A sacred French social hour between work and dinner to 'open' the appetite." },
+]
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Export
 // ─────────────────────────────────────────────────────────────────────────────
 export const LESSON_PLANS: Record<string, LessonPlanData> = {
@@ -321,4 +364,5 @@ export const LESSON_PLANS: Record<string, LessonPlanData> = {
   'a1-u4': { title: 'Café Culture',            theme: 'Ordering food & drink, polite requests',     phrases: a1u4Phrases, practice: a1u4Practice, test: a1u4Test },
   'a1-u5': { title: 'What Are You Wearing?',   theme: 'Colors, clothing & adjective agreement',     phrases: a1u5Phrases, practice: a1u5Practice, test: a1u5Test },
   'a1-u6': { title: 'Getting Around',          theme: 'Directions, city places & prepositions',     phrases: a1u6Phrases, practice: a1u6Practice, test: a1u6Test },
+  'a1-u7': { title: 'From Dawn to Dusk',       theme: 'Daily routines, reflexive verbs & time of day', phrases: a1u7Phrases, practice: a1u7Practice, test: a1u7Test },
 }
