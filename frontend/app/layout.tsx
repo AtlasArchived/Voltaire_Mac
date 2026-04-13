@@ -4,7 +4,7 @@ import { Toaster } from 'react-hot-toast'
 
 export const metadata: Metadata = {
   title: 'Voltaire — French Fluency',
-  description: 'AI-powered French language tutor. Fluency for life.',
+  description: 'Voltaire is an AI-powered French language tutor that adapts to your level and learning style. From A1 to C2, build real fluency with personalized drills, conversation practice, and intelligent coaching.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
@@ -43,11 +43,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
         <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png" />
         <link rel="apple-touch-icon" sizes="512x512" href="/icons/icon-512.png" />
-        {/* Fonts */}
+        {/* Open Graph / SEO */}
+        <meta property="og:title" content="Voltaire — French Fluency" />
+        <meta property="og:description" content="AI-powered French language tutor. Fluency for life." />
+        <meta property="og:type" content="website" />
+        <meta name="theme-color" content="#07090f" />
+        {/* Fonts — display=swap prevents FOIT */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
-          href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Cinzel:wght@600;700&display=swap"
           rel="stylesheet"
         />
         {/* Inline critical CSS to prevent flash */}

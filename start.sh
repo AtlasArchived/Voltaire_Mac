@@ -67,11 +67,17 @@ fi
 # ── Python packages ──────────────────────────────────────────
 if ! $PY -c "import fastapi, uvicorn" 2>/dev/null; then
   echo "  Installing Python packages (one time)..."
-  $PY -m pip install fastapi "uvicorn[standard]" google-generativeai \
-    google-genai requests feedparser edge-tts gTTS --quiet \
-    --break-system-packages 2>/dev/null \
-    || $PY -m pip install fastapi "uvicorn[standard]" google-generativeai \
-       google-genai requests feedparser edge-tts gTTS --quiet
+  if [ -f "$DIR/requirements.txt" ]; then
+    $PY -m pip install -r "$DIR/requirements.txt" --quiet \
+      --break-system-packages 2>/dev/null \
+      || $PY -m pip install -r "$DIR/requirements.txt" --quiet
+  else
+    $PY -m pip install fastapi "uvicorn[standard]" google-generativeai \
+      google-genai requests feedparser edge-tts gTTS --quiet \
+      --break-system-packages 2>/dev/null \
+      || $PY -m pip install fastapi "uvicorn[standard]" google-generativeai \
+         google-genai requests feedparser edge-tts gTTS --quiet
+  fi
   echo "  Python packages installed"
 fi
 
@@ -171,16 +177,32 @@ if ! wait_for "Backend" "http://localhost:8000/api/health"; then
   exit 1
 fi
 
-# ── Start frontend ───────────────────────────────────────────
+# ── Start frontend (production build if present; override with VOLTAIRE_FORCE_DEV=1) ──
+USE_NEXT_START=false
+if [ -f "$DIR/frontend/.next/BUILD_ID" ] && [ -z "${VOLTAIRE_FORCE_DEV:-}" ]; then
+  USE_NEXT_START=true
+fi
+
 echo "  Starting frontend (logging to logs/frontend.log)..."
 if [ "$HEADLESS" = true ]; then
-  nohup bash -c "cd \"$DIR/frontend\" && exec npm run dev" \
-    >>"$DIR/logs/frontend.log" 2>&1 </dev/null &
+  if [ "$USE_NEXT_START" = true ]; then
+    nohup bash -c "cd \"$DIR/frontend\" && export NODE_ENV=production && exec npm run start" \
+      >>"$DIR/logs/frontend.log" 2>&1 </dev/null &
+  else
+    nohup bash -c "cd \"$DIR/frontend\" && exec npm run dev" \
+      >>"$DIR/logs/frontend.log" 2>&1 </dev/null &
+  fi
   disown 2>/dev/null || true
 else
-  (
-    cd "$DIR/frontend" && exec npm run dev
-  ) >>"$DIR/logs/frontend.log" 2>&1 &
+  if [ "$USE_NEXT_START" = true ]; then
+    (
+      cd "$DIR/frontend" && export NODE_ENV=production && exec npm run start
+    ) >>"$DIR/logs/frontend.log" 2>&1 &
+  else
+    (
+      cd "$DIR/frontend" && exec npm run dev
+    ) >>"$DIR/logs/frontend.log" 2>&1 &
+  fi
 fi
 
 if ! wait_for "Frontend" "http://localhost:3000" frontend; then

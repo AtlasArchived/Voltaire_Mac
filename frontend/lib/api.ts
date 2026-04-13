@@ -209,6 +209,37 @@ export interface AdaptiveNextLesson {
   reason: string
 }
 
+export interface AdaptiveMasteryMap {
+  [key: string]: { mastery?: number; lastSeenAt?: number }
+}
+
+export interface PerformanceTypeStat {
+  q_type: string
+  attempts: number
+  accuracy: number
+  avg_response_ms: number
+}
+
+export interface PerformanceSummary {
+  days: number
+  attempts: number
+  accuracy: number
+  by_source: Record<string, number>
+  by_type: PerformanceTypeStat[]
+}
+
+export interface PerformanceTrendPoint {
+  day: string
+  attempts: number
+  accuracy: number
+  avg_response_ms: number
+}
+
+export interface PerformanceTrend {
+  days: number
+  points: PerformanceTrendPoint[]
+}
+
 export interface C1Status {
   elo: number
   target_elo: number
@@ -361,6 +392,11 @@ export const api = {
   getWeakSkillReport: () => get<{ skills: WeakSkillItem[] }>('/adaptive/weak-skill-report'),
   getReviewQueue: (limit = 10) => get<{ items: ReviewQueueItem[] }>(`/adaptive/review-queue?limit=${limit}`),
   getNextBestLesson: () => get<AdaptiveNextLesson>('/adaptive/next-best-lesson'),
+  getAdaptiveMastery: () => get<{ mastery: AdaptiveMasteryMap }>('/adaptive/mastery'),
+  saveAdaptiveMastery: (mastery: AdaptiveMasteryMap) =>
+    post<{ ok: boolean; count: number }>('/adaptive/mastery', { mastery }),
+  getPerformanceSummary: (days = 14) => get<PerformanceSummary>(`/performance/summary?days=${days}`),
+  getPerformanceTrend: (days = 30) => get<PerformanceTrend>(`/performance/trend?days=${days}`),
   logAdaptiveEvent: (data: {
     q_type: string
     cefr?: string

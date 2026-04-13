@@ -1,5 +1,5 @@
 'use client'
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import { CourseUnit } from '../lib/course'
 
 // ── Layout constants ──────────────────────────────────────────────────────────
@@ -32,7 +32,6 @@ function buildTree(units: CourseUnit[]) {
   while (ui < units.length) {
     const pat  = PATTERNS[row % PATTERNS.length]
     const take = Math.min(pat.length, units.length - ui)
-    // Normalise partial rows: always centre the small group
     const cols: Col[] =
       take === 1 ? [2] :
       take === 2 ? [1, 3] :
@@ -42,7 +41,6 @@ function buildTree(units: CourseUnit[]) {
     row++
   }
 
-  // Edges: connect any (fromCol, toCol) pair whose columns are within 2 steps of each other
   const edges: Edge[] = []
   for (let r = 0; r < rowCols.length - 1; r++) {
     for (const fc of rowCols[r]) {
@@ -73,22 +71,27 @@ function bezierPath(
 ): string {
   const y1 = fy + N_D / 2 + 4
   const y2 = ty - N_D / 2 - 4
-  // Cubic bezier: drop straight down from source, rise straight up into target
   return `M${fx},${y1} C${fx},${(y1 + y2) / 2} ${tx},${(y1 + y2) / 2} ${tx},${y2}`
+}
+
+// ── XP reward estimate ────────────────────────────────────────────────────────
+function estimateXp(unit: CourseUnit): number {
+  return unit.lessons.length * 10
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 interface Props {
   units:       CourseUnit[]
-  color:       string   // CEFR hex color, e.g. '#58cc02'
-  activeIndex: number   // index within units[] that is the current unit; -1 = none
+  color:       string
+  activeIndex: number
   onSelect:    (idx: number) => void
 }
 
 export default function SkillTree({ units, color, activeIndex, onSelect }: Props) {
   const { nodes, edges, totalRows } = useMemo(() => buildTree(units), [units])
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
 
-  const svgH = totalRows * ROW_H + 32   // extra space for bottom label
+  const svgH = totalRows * ROW_H + 32
 
   return (
     <div style={{
@@ -99,13 +102,21 @@ export default function SkillTree({ units, color, activeIndex, onSelect }: Props
       userSelect: 'none',
     }}>
 
-      {/* ── SVG connector lines (sits behind nodes) ── */}
+      {/* ── SVG connector lines ── */}
       <svg
         width={W}
         height={svgH}
         style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: 0, overflow: 'visible' }}
         aria-hidden="true"
       >
+        <defs>
+          {/* Animated gradient for active paths */}
+          <linearGradient id={`path-grad-${color.replace('#','')}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.9"/>
+            <stop offset="100%" stopColor={color} stopOpacity="0.4"/>
+          </linearGradient>
+        </defs>
+
         {edges.map((e, i) => {
           const fn = nodes.find(n => n.row === e.fr && n.col === e.fc)
           const tn = nodes.find(n => n.row === e.tr && n.col === e.tc)
@@ -113,6 +124,10 @@ export default function SkillTree({ units, color, activeIndex, onSelect }: Props
 
           const unlocked = !fn.unit.locked && !tn.unit.locked
           const fromDone = fn.unit.lessons.every(l => l.complete)
+          const isActive = fn.idx === activeIndex || tn.idx === activeIndex
+
+          // Animated dashed line for active unlocked paths
+          const dashAnim = unlocked && !fromDone && isActive
 
           return (
             <path
@@ -120,13 +135,15 @@ export default function SkillTree({ units, color, activeIndex, onSelect }: Props
               d={bezierPath(nodeCenter(e.fr, e.fc), nodeCenter(e.tr, e.tc))}
               fill="none"
               stroke={
-                !unlocked   ? 'rgba(255,255,255,.05)' :
-                fromDone    ? color                   :
-                              'rgba(255,255,255,.13)'
+                !unlocked   ? 'rgba(255,255,255,.04)' :
+                fromDone    ? `url(#path-grad-${color.replace('#','')})` :
+                isActive    ? `${color}66` :
+                              'rgba(255,255,255,.10)'
               }
-              strokeWidth={unlocked ? 3 : 2}
-              strokeDasharray={unlocked && !fromDone ? '8 5' : undefined}
+              strokeWidth={unlocked ? (isActive ? 4 : 3) : 2}
+              strokeDasharray={unlocked && !fromDone ? (isActive ? '10 6' : '7 5') : undefined}
               strokeLinecap="round"
+              style={dashAnim ? { animation: 'dash-march 1.4s linear infinite' } : undefined}
             />
           )
         })}
@@ -136,19 +153,22 @@ export default function SkillTree({ units, color, activeIndex, onSelect }: Props
       <div style={{ position: 'relative', zIndex: 1, height: svgH }}>
         {nodes.map(node => {
           const [cx, cy] = nodeCenter(node.row, node.col)
-          const isActive = node.idx === activeIndex
-          const allDone  = node.unit.lessons.every(l => l.complete)
-          const crown    = crownLevel(node.unit)
+          const isActive  = node.idx === activeIndex
+          const allDone   = node.unit.lessons.every(l => l.complete)
+          const isHovered = hoveredIdx === node.idx
+          const crown     = crownLevel(node.unit)
+          const donePct   = node.unit.lessons.length > 0
+            ? Math.round((node.unit.lessons.filter(l=>l.complete).length / node.unit.lessons.length) * 100)
+            : 0
 
-          /* inline bg colour */
           const bg =
             allDone          ? color :
             isActive         ? color + '28' :
-            node.unit.locked ? 'rgba(255,255,255,.03)' :
+            node.unit.locked ? 'rgba(255,255,255,.02)' :
                                'var(--surface2, #1c2330)'
 
           const border = node.unit.locked
-            ? 'rgba(255,255,255,.08)'
+            ? 'rgba(255,255,255,.07)'
             : color
 
           const shadow = isActive
@@ -161,17 +181,54 @@ export default function SkillTree({ units, color, activeIndex, onSelect }: Props
             <div
               key={node.unit.id}
               style={{
-                position:  'absolute',
-                left:      cx - N_D / 2,
-                top:       cy - N_D / 2,
-                width:     N_D,
-                display:   'flex',
-                flexDirection:  'column',
-                alignItems:     'center',
-                overflow:  'visible',
+                position:      'absolute',
+                left:          cx - N_D / 2,
+                top:           cy - N_D / 2,
+                width:         N_D,
+                display:       'flex',
+                flexDirection: 'column',
+                alignItems:    'center',
+                overflow:      'visible',
               }}
+              onMouseEnter={() => setHoveredIdx(node.idx)}
+              onMouseLeave={() => setHoveredIdx(null)}
             >
-              {/* START bubble — floats above active node */}
+              {/* Tooltip */}
+              {isHovered && !node.unit.locked && (
+                <div style={{
+                  position:   'absolute',
+                  bottom:     N_D + 14,
+                  left:       '50%',
+                  transform:  'translateX(-50%)',
+                  background: 'var(--surface3, #21262d)',
+                  border:     '1px solid rgba(255,255,255,.14)',
+                  borderRadius: 10,
+                  padding:    '7px 12px',
+                  fontSize:   12,
+                  fontWeight: 700,
+                  color:      'var(--text, #fff)',
+                  whiteSpace: 'nowrap',
+                  zIndex:     50,
+                  boxShadow:  '0 4px 20px rgba(0,0,0,.6)',
+                  pointerEvents: 'none',
+                  textAlign:  'center',
+                  lineHeight: 1.45,
+                }}>
+                  <div style={{ marginBottom: 2 }}>{node.unit.title}</div>
+                  <div style={{ fontSize: 11, color: color, fontWeight: 800 }}>
+                    {allDone ? '✓ Complete' : `${donePct}% done`} · ~{estimateXp(node.unit)} XP
+                  </div>
+                  {/* Caret */}
+                  <div style={{
+                    position: 'absolute', top: '100%', left: '50%',
+                    transform: 'translateX(-50%)',
+                    borderLeft: '6px solid transparent', borderRight: '6px solid transparent',
+                    borderTop: '6px solid rgba(255,255,255,.14)',
+                  }}/>
+                </div>
+              )}
+
+              {/* START bubble above active node */}
               {isActive && !node.unit.locked && (
                 <div
                   aria-hidden="true"
@@ -191,10 +248,10 @@ export default function SkillTree({ units, color, activeIndex, onSelect }: Props
                     whiteSpace: 'nowrap',
                     zIndex:     20,
                     pointerEvents: 'none',
+                    animation:  'skill-pulse 2.4s ease-in-out infinite',
                   }}
                 >
                   START
-                  {/* Down arrow caret */}
                   <span style={{
                     position:    'absolute',
                     top:         '100%',
@@ -207,6 +264,23 @@ export default function SkillTree({ units, color, activeIndex, onSelect }: Props
                     borderTop:   `8px solid ${color}`,
                   }}/>
                 </div>
+              )}
+
+              {/* ── Pulsing ring on active node ── */}
+              {isActive && !node.unit.locked && (
+                <div style={{
+                  position:     'absolute',
+                  top:          -8,
+                  left:         '50%',
+                  transform:    'translateX(-50%)',
+                  width:        N_D + 16,
+                  height:       N_D + 16,
+                  borderRadius: '50%',
+                  border:       `3px solid ${color}`,
+                  opacity:      0.45,
+                  animation:    'pulse-glow 2s ease-in-out infinite',
+                  pointerEvents: 'none',
+                }}/>
               )}
 
               {/* ── Circle button ── */}
@@ -225,19 +299,39 @@ export default function SkillTree({ units, color, activeIndex, onSelect }: Props
                   alignItems:   'center',
                   justifyContent: 'center',
                   cursor:       node.unit.locked ? 'not-allowed' : 'pointer',
-                  opacity:      node.unit.locked ? .28 : 1,
+                  // Locked: grayscale + reduced opacity
+                  opacity:      node.unit.locked ? 0.35 : 1,
+                  filter:       node.unit.locked ? 'grayscale(1)' : 'none',
                   boxShadow:    shadow,
                   outline:      'none',
                   position:     'relative',
                   flexShrink:   0,
                   fontFamily:   'inherit',
                   padding:      0,
-                  // pulse animation via globals.css @keyframes skill-pulse
                   animation:    isActive ? 'skill-pulse 2.4s ease-in-out infinite' : 'none',
                   WebkitTapHighlightColor: 'transparent',
+                  transition:   'transform .15s cubic-bezier(.34,1.56,.64,1), box-shadow .15s, filter .2s',
                 }}
               >
-                {node.unit.locked ? '🔒' : node.unit.emoji}
+                {/* Lock icon overlay for locked nodes */}
+                {node.unit.locked ? (
+                  <span style={{ fontSize: '1.5rem' }}>🔒</span>
+                ) : allDone ? (
+                  // Completion checkmark overlay
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span>{node.unit.emoji}</span>
+                    <span style={{
+                      position: 'absolute', bottom: -6, right: -8,
+                      width: 20, height: 20, borderRadius: '50%',
+                      background: '#fff', color: color,
+                      fontSize: 12, fontWeight: 900,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      boxShadow: '0 2px 6px rgba(0,0,0,.5)',
+                    }}>✓</span>
+                  </div>
+                ) : (
+                  node.unit.emoji
+                )}
 
                 {/* Crown badge */}
                 {crown >= 5 && (
@@ -290,6 +384,8 @@ export default function SkillTree({ units, color, activeIndex, onSelect }: Props
                   ? 'rgba(255,255,255,.16)'
                   : isActive
                   ? '#fff'
+                  : allDone
+                  ? color
                   : 'rgba(255,255,255,.55)',
               }}>
                 {node.unit.title}

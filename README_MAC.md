@@ -1,6 +1,6 @@
 # Voltaire on Mac
 
-## Quick Start (5 minutes)
+## Quick Start (first run ~7–10 minutes)
 
 ### Step 1 — Copy the Voltaire folder to your Mac
 Put the `voltaire` folder anywhere you like — Desktop, Documents, wherever.
@@ -12,13 +12,13 @@ chmod +x ~/Desktop/voltaire/start.sh
 chmod +x ~/Desktop/voltaire/tunnel.sh
 chmod +x ~/Desktop/voltaire/install_mac.sh
 ```
-Replace `~/Desktop/voltaire` with wherever you put the folder.
+Replace `~/Desktop/voltaire` with wherever you put the folder (e.g. `voltaire_mac`).
 
 ### Step 3 — Run the setup script (first time only)
 ```bash
 ~/Desktop/voltaire/install_mac.sh
 ```
-This installs Python, Node.js, and all packages automatically. Takes ~5 minutes. Only needed once.
+This installs Python, Node.js, and all packages automatically, builds the frontend for production, and creates the database. Only needed once.
 
 ### Step 4 — Add your Gemini API key
 1. Go to https://aistudio.google.com → Get API Key → free tier
@@ -90,6 +90,11 @@ Make sure both Terminal windows are open (backend + frontend). Check that port 8
 **"Module not found" error**
 ```bash
 python3 -m pip install fastapi "uvicorn[standard]" google-generativeai --break-system-packages
+```
+
+**Force Next.js dev mode** (if a production build misbehaves)
+```bash
+VOLTAIRE_FORCE_DEV=1 ./start.sh
 ```
 
 **Apple Silicon Mac (M1/M2/M3)**

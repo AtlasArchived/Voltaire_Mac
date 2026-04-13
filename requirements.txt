@@ -1,0 +1,14 @@
+# Backend (align with install_mac.sh / start.sh)
+fastapi
+uvicorn[standard]
+google-generativeai
+google-genai
+requests
+schedule
+feedparser
+pyTelegramBotAPI
+edge-tts
+gTTS
+openai-whisper
+soundfile
+numpy

@@ -23,6 +23,8 @@ sys.path.insert(0, str(_root))
 # Also add current dir
 sys.path.insert(0, str(_here))
 
+from paths import get_db_path
+
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -100,6 +102,9 @@ class LearnProgressRequest(BaseModel):
     correct: bool
     mode: str = "learn"
 
+class AdaptiveMasterySaveRequest(BaseModel):
+    mastery: dict = {}
+
 class C1StatusResponse(BaseModel):
     elo: int
     target_elo: int
@@ -155,7 +160,7 @@ def _ensure_core_db() -> None:
     Ensure the minimum schema exists so onboarding can complete.
     """
     import sqlite3
-    with sqlite3.connect("cato_mind.db") as db:
+    with sqlite3.connect(get_db_path()) as db:
         db.execute("""
             CREATE TABLE IF NOT EXISTS learner (
                 id INTEGER PRIMARY KEY,
@@ -225,7 +230,7 @@ def _ensure_core_db() -> None:
 def _get_learner_elo() -> int:
     _ensure_core_db()
     import sqlite3
-    with sqlite3.connect("cato_mind.db") as db:
+    with sqlite3.connect(get_db_path()) as db:
         row = db.execute("SELECT elo FROM learner WHERE id=1").fetchone()
     return int(row[0]) if row else 800
 
@@ -271,7 +276,7 @@ def _skill_tag_for(q_type: str, prompt: str) -> str:
 def _adaptive_profile(limit: int = 250):
     import sqlite3
     _ensure_core_db()
-    with sqlite3.connect("cato_mind.db") as db:
+    with sqlite3.connect(get_db_path()) as db:
         rows = db.execute(
             """
             SELECT q_type, prompt, correct, response_ms
@@ -413,7 +418,7 @@ def _checkpoint_required_pct(level: str) -> int:
 def _recent_accuracy(limit: int = 40):
     import sqlite3
     _ensure_core_db()
-    with sqlite3.connect("cato_mind.db") as db:
+    with sqlite3.connect(get_db_path()) as db:
         rows = db.execute(
             "SELECT correct FROM adaptive_events ORDER BY id DESC LIMIT ?",
             (limit,),
@@ -429,7 +434,7 @@ def _load_checkpoints():
     import sqlite3
     _ensure_core_db()
     out = {}
-    with sqlite3.connect("cato_mind.db") as db:
+    with sqlite3.connect(get_db_path()) as db:
         rows = db.execute(
             "SELECT key, value FROM app_settings WHERE key LIKE 'checkpoint_%'"
         ).fetchall()
@@ -452,7 +457,7 @@ def post_lesson_memory(body: LessonMemoryIn):
     _ensure_core_db()
     import sqlite3
     try:
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             db.execute(
                 """INSERT INTO lesson_completion_log (lesson_id, unit_id, title, source, detail)
                    VALUES (?,?,?,?,?)""",
@@ -475,7 +480,7 @@ def get_lesson_memory(limit: int = 100):
     _ensure_core_db()
     import sqlite3
     lim = max(1, min(limit, 200))
-    with sqlite3.connect("cato_mind.db") as db:
+    with sqlite3.connect(get_db_path()) as db:
         rows = db.execute(
             """SELECT id, created_at, lesson_id, unit_id, title, source, detail
                FROM lesson_completion_log ORDER BY id DESC LIMIT ?""",
@@ -508,7 +513,7 @@ def _hover_lookup_cached(word: str, langpair: str) -> str:
         return ""
     cache_key = f"{langpair}:{w}"
     _ensure_core_db()
-    with sqlite3.connect("cato_mind.db") as db:
+    with sqlite3.connect(get_db_path()) as db:
         row = db.execute(
             "SELECT en_text FROM hover_translation_cache WHERE fr_norm = ?", (cache_key,)
         ).fetchone()
@@ -522,7 +527,7 @@ def _hover_lookup_cached(word: str, langpair: str) -> str:
         out = (data.get("responseData") or {}).get("translatedText") or ""
         if not out or "MYMEMORY WARNING" in out.upper():
             return ""
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             db.execute(
                 "INSERT OR REPLACE INTO hover_translation_cache (fr_norm, en_text) VALUES (?,?)",
                 (cache_key, out[:500]),
@@ -550,7 +555,7 @@ def translate_hover(q: str = "", pair: str = "fr|en"):
 def get_learner():
     try:
         import sqlite3
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             r = db.execute(
                 "SELECT name, elo, xp, unit_level FROM learner LIMIT 1"
             ).fetchone()
@@ -592,7 +597,7 @@ def get_lesson_state():
         from lesson_engine import get_unlocked_units
         import sqlite3
         thread  = load_thread()
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             learner = db.execute("SELECT elo FROM learner LIMIT 1").fetchone()
         elo = learner[0] if learner else 800
         return {
@@ -1110,7 +1115,7 @@ def adaptive_event(req: AdaptiveEventRequest):
     try:
         import sqlite3
         _ensure_core_db()
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             db.execute(
                 """
                 INSERT INTO adaptive_events
@@ -1146,7 +1151,7 @@ def weak_skill_report():
     try:
         import sqlite3
         _ensure_core_db()
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             rows = db.execute(
                 """
                 SELECT skill_tag, COUNT(*) as attempts, SUM(CASE WHEN correct=0 THEN 1 ELSE 0 END) as wrong
@@ -1172,7 +1177,7 @@ def adaptive_review_queue(limit: int = 10):
     try:
         import sqlite3
         _ensure_core_db()
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             rows = db.execute(
                 """
                 SELECT prompt, q_type, skill_tag, MAX(created_at) as seen_at,
@@ -1205,7 +1210,7 @@ def adaptive_next_best_lesson():
         profile = _adaptive_profile()
         queue = adaptive_review_queue(limit=5).get("items", [])
         weak = weak_skill_report().get("skills", [])
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             row = db.execute("SELECT elo FROM learner WHERE id=1").fetchone()
         elo = int(row[0]) if row else 800
         if elo < 1000:
@@ -1233,6 +1238,138 @@ def adaptive_next_best_lesson():
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.get("/api/adaptive/mastery")
+def adaptive_get_mastery():
+    try:
+        import sqlite3
+        _ensure_core_db()
+        with sqlite3.connect(get_db_path()) as db:
+            row = db.execute(
+                "SELECT value FROM app_settings WHERE key='adaptive_mastery_v1' LIMIT 1"
+            ).fetchone()
+        if not row or not row[0]:
+            return {"mastery": {}}
+        data = json.loads(row[0])
+        return {"mastery": data if isinstance(data, dict) else {}}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/adaptive/mastery")
+def adaptive_save_mastery(req: AdaptiveMasterySaveRequest):
+    try:
+        payload = req.mastery if isinstance(req.mastery, dict) else {}
+        # Keep payload bounded.
+        if len(payload) > 400:
+            items = list(payload.items())[:400]
+            payload = {k: v for k, v in items}
+        text = json.dumps(payload, separators=(",", ":"))
+        import sqlite3
+        _ensure_core_db()
+        with sqlite3.connect(get_db_path()) as db:
+            db.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
+                ("adaptive_mastery_v1", text),
+            )
+        return {"ok": True, "count": len(payload)}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/performance/summary")
+def performance_summary(days: int = 14):
+    try:
+        import sqlite3
+        _ensure_core_db()
+        d = max(1, min(days, 90))
+        with sqlite3.connect(get_db_path()) as db:
+            lesson_rows = db.execute(
+                """
+                SELECT source, COUNT(*) as n
+                FROM lesson_completion_log
+                WHERE datetime(created_at) >= datetime('now', ?)
+                GROUP BY source
+                """,
+                (f"-{d} day",),
+            ).fetchall()
+            drill_rows = db.execute(
+                """
+                SELECT q_type, COUNT(*) as attempts,
+                       SUM(CASE WHEN correct=1 THEN 1 ELSE 0 END) as correct_n,
+                       AVG(CASE WHEN response_ms > 0 THEN response_ms END) as avg_ms
+                FROM adaptive_events
+                WHERE datetime(created_at) >= datetime('now', ?)
+                GROUP BY q_type
+                ORDER BY attempts DESC
+                """,
+                (f"-{d} day",),
+            ).fetchall()
+            totals = db.execute(
+                """
+                SELECT COUNT(*) as attempts,
+                       SUM(CASE WHEN correct=1 THEN 1 ELSE 0 END) as correct_n
+                FROM adaptive_events
+                WHERE datetime(created_at) >= datetime('now', ?)
+                """,
+                (f"-{d} day",),
+            ).fetchone()
+
+        by_source = {r[0]: int(r[1] or 0) for r in lesson_rows}
+        attempts = int((totals or [0, 0])[0] or 0)
+        correct_n = int((totals or [0, 0])[1] or 0)
+        return {
+            "days": d,
+            "attempts": attempts,
+            "accuracy": round((correct_n / attempts), 4) if attempts else 0.0,
+            "by_source": by_source,
+            "by_type": [
+                {
+                    "q_type": r[0],
+                    "attempts": int(r[1] or 0),
+                    "accuracy": round((int(r[2] or 0) / max(int(r[1] or 1), 1)), 4),
+                    "avg_response_ms": int(float(r[3] or 0)),
+                }
+                for r in drill_rows
+            ],
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/performance/trend")
+def performance_trend(days: int = 30):
+    try:
+        import sqlite3
+        _ensure_core_db()
+        d = max(3, min(days, 120))
+        with sqlite3.connect(get_db_path()) as db:
+            rows = db.execute(
+                """
+                SELECT date(created_at) as day,
+                       COUNT(*) as attempts,
+                       SUM(CASE WHEN correct=1 THEN 1 ELSE 0 END) as correct_n,
+                       AVG(CASE WHEN response_ms > 0 THEN response_ms END) as avg_ms
+                FROM adaptive_events
+                WHERE datetime(created_at) >= datetime('now', ?)
+                GROUP BY day
+                ORDER BY day ASC
+                """,
+                (f"-{d} day",),
+            ).fetchall()
+        points = [
+            {
+                "day": r[0],
+                "attempts": int(r[1] or 0),
+                "accuracy": round((int(r[2] or 0) / max(int(r[1] or 1), 1)), 4),
+                "avg_response_ms": int(float(r[3] or 0)),
+            }
+            for r in rows
+        ]
+        return {"days": d, "points": points}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.post("/api/learn/progress")
 def learn_progress(req: LearnProgressRequest):
     try:
@@ -1240,7 +1377,7 @@ def learn_progress(req: LearnProgressRequest):
         _ensure_core_db()
         xp_gain = 12 if req.correct else 4
         elo_gain = 10 if req.correct else -4
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             row = db.execute("SELECT xp, elo FROM learner WHERE id=1").fetchone()
             xp = (row[0] if row else 0) + xp_gain
             elo = max(700, min(2200, (row[1] if row else 800) + elo_gain))
@@ -1255,7 +1392,7 @@ def c1_status():
     try:
         import sqlite3
         _ensure_core_db()
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             row = db.execute("SELECT elo FROM learner WHERE id=1").fetchone()
         elo = int(row[0]) if row else 800
         profile = _adaptive_profile()
@@ -1283,7 +1420,7 @@ def c2_status():
     try:
         import sqlite3
         _ensure_core_db()
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             row = db.execute("SELECT elo FROM learner WHERE id=1").fetchone()
         elo = int(row[0]) if row else 800
         profile = _adaptive_profile()
@@ -1311,7 +1448,7 @@ def cefr_missions():
     try:
         import sqlite3
         _ensure_core_db()
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             row = db.execute("SELECT elo FROM learner WHERE id=1").fetchone()
         elo = int(row[0]) if row else 800
         checkpoints = _load_checkpoints()
@@ -1353,7 +1490,7 @@ def run_cefr_checkpoint(level: str, req: Optional[CheckpointSubmitRequest] = Non
         required = _checkpoint_required_pct(level)
         import sqlite3
         _ensure_core_db()
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             fail_row = db.execute(
                 "SELECT value FROM app_settings WHERE key=?",
                 (f"checkpoint_fail_{level.lower()}",),
@@ -1380,7 +1517,7 @@ def run_cefr_checkpoint(level: str, req: Optional[CheckpointSubmitRequest] = Non
             if passed else
             f"Checkpoint not passed yet. Do targeted review, then retry {level}."
         )
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             db.execute(
                 "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
                 (f"checkpoint_{level.lower()}", "passed" if passed else "failed"),
@@ -1417,7 +1554,7 @@ def run_unit_checkpoint(unit_id: str, req: Optional[CheckpointSubmitRequest] = N
         passed = score >= required
         import sqlite3
         _ensure_core_db()
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             db.execute(
                 "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
                 (f"unit_checkpoint_{unit_id}", "passed" if passed else "failed"),
@@ -1516,7 +1653,7 @@ def onboarding_status():
         try:
             _ensure_core_db()
             import sqlite3
-            with sqlite3.connect("cato_mind.db") as db:
+            with sqlite3.connect(get_db_path()) as db:
                 row = db.execute(
                     "SELECT value FROM app_settings WHERE key='onboarded' LIMIT 1"
                 ).fetchone()
@@ -1531,7 +1668,7 @@ def complete_onboarding(req: OnboardingRequest):
         _ensure_core_db()
         import sqlite3
 
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             elo = 800 + (req.placement_score * 80)
             db.execute("UPDATE learner SET name=?, elo=? WHERE id=1",
                        (req.name, min(elo, 1200)))
@@ -1564,7 +1701,7 @@ def get_settings():
     try:
         _ensure_core_db()
         import sqlite3
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             rows = db.execute("SELECT key, value FROM app_settings").fetchall()
         return {"settings": {r[0]: r[1] for r in rows}}
     except Exception as exc:
@@ -1576,7 +1713,7 @@ def save_settings(req: SettingRequest):
     try:
         _ensure_core_db()
         import sqlite3
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             db.execute(
                 "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
                 (req.key, req.value),
@@ -1597,7 +1734,7 @@ def lookup_word(word: str):
     try:
         import sqlite3
         word_lower = word.lower().strip(".,!?;:'\"«»—")
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             row = db.execute(
                 "SELECT french, english, latin_root, is_cognate FROM vocabulary WHERE LOWER(french)=? LIMIT 1",
                 (word_lower,)
@@ -1623,7 +1760,7 @@ def pattern_diagnosis():
     try:
         import sqlite3
         _ensure_core_db()
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             rows = db.execute(
                 """
                 SELECT q_type, skill_tag, prompt, user_answer, expected_answer
@@ -1795,7 +1932,7 @@ def get_progress():
     try:
         from elo_engine import get_elo_history
         import sqlite3
-        with sqlite3.connect("cato_mind.db") as db:
+        with sqlite3.connect(get_db_path()) as db:
             sessions = db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
             vocab_mastered = db.execute(
                 "SELECT COUNT(*) FROM vocabulary WHERE sm2_reps >= 3"
@@ -1816,7 +1953,7 @@ def get_progress():
 
 def _table_exists(name: str) -> bool:
     import sqlite3
-    with sqlite3.connect("cato_mind.db") as db:
+    with sqlite3.connect(get_db_path()) as db:
         row = db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,)
         ).fetchone()

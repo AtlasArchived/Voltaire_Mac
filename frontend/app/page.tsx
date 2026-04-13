@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { api, Learner, StreakState, AdaptiveProfile, AdaptiveNextLesson, C1Status, C2Status, CefrMission, CefrCheckpoint, AiCoachPlan, ReviewQueueItem, Story, StoryDetail, WeakSkillItem, PatternDiagnosis, GeneratedDrillQ, streamLesson } from '../lib/api'
+import { api, Learner, StreakState, AdaptiveProfile, AdaptiveNextLesson, C1Status, C2Status, CefrMission, CefrCheckpoint, AiCoachPlan, ReviewQueueItem, Story, StoryDetail, WeakSkillItem, PatternDiagnosis, GeneratedDrillQ, PerformanceSummary, PerformanceTrend, streamLesson } from '../lib/api'
 import { GRAMMAR, GrammarRule, CATEGORIES, CEFR_LEVELS } from '../lib/grammar'
 import { buildCourse, LESSON_TYPE_ICONS, LESSON_TYPE_COLORS } from '../lib/course'
 import { QUESTION_BANK, CEFR_ELO, UNIT_META, DrillQ, type CefrLevel } from '../lib/questionBank'
@@ -29,7 +29,7 @@ interface Achievement {
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type Mode = 'learn'|'chat'|'mathieu'|'voice'|'stories'|'map'|'grammar'|'review'|'memory'|'settings'|'leaderboard'
+type Mode = 'learn'|'chat'|'mathieu'|'voice'|'stories'|'map'|'grammar'|'review'|'memory'|'settings'|'leaderboard'|'performance'
 
 interface Msg   { role:'assistant'|'user'; text:string }
 interface ArrangeAiFeedback { corrected: string; explanation: string; next_step?: string }
@@ -40,6 +40,18 @@ interface CheckpointSession {
   correct: number
   startedAt: number
   endAt: number
+}
+
+function questionDifficultyWeight(kind: string): number {
+  if (kind === 'mcq') return 0.6
+  if (kind === 'arrange') return 1.0
+  if (kind === 'translate') return 1.2
+  if (kind === 'listen') return 1.35
+  return 1.0
+}
+
+function skillKeyForQuestion(q: DrillQ): string {
+  return `${q.cefr}:${q.type}`
 }
 
 // ── Markdown ──────────────────────────────────────────────────────────────────
@@ -180,6 +192,35 @@ function courseLessonIndexToUnitId(cefr: string, lessonIndex: number): string {
   return units[idx].id
 }
 
+function toLogSnippet(value: string, max = 120): string {
+  const clean = (value || '').replace(/\s+/g, ' ').trim()
+  if (clean.length <= max) return clean
+  return `${clean.slice(0, max - 1)}...`
+}
+
+function performanceInsight(summary: PerformanceSummary | null): string {
+  if (!summary || summary.attempts < 5) {
+    return 'Complete at least 5 drills to unlock targeted coaching insights.'
+  }
+  const acc = summary.accuracy
+  const topWeak = [...(summary.by_type || [])]
+    .sort((a, b) => a.accuracy - b.accuracy || b.attempts - a.attempts)[0]
+  if (acc < 0.62) {
+    return `Stabilize first: focus ${topWeak?.q_type || 'mixed'} drills for 10 minutes, then do 5 easy checks to rebuild confidence.`
+  }
+  if (acc < 0.78) {
+    return `Good progress. Prioritize ${topWeak?.q_type || 'your weakest type'} with short correction loops (3-5 attempts each).`
+  }
+  return `Strong momentum. Keep pushing productive output: prioritize translate/listen and run one checkpoint prep block today.`
+}
+
+function xpMultiplierFromCombo(combo: number): number {
+  if (combo >= 10) return 2
+  if (combo >= 6) return 1.6
+  if (combo >= 3) return 1.3
+  return 1
+}
+
 export default function App() {
   const [ready,      setReady]     = useState(false)
   const [onboarding, setOnboard]   = useState(false)
@@ -194,8 +235,11 @@ export default function App() {
   const [welcomeVisible, setWelcomeVisible] = useState(false)
   const [dailyGoalCelebrated, setDailyGoalCelebrated] = useState(false)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const [sessionXp, setSessionXp] = useState(0)
   const shownMilestonesRef = useRef<Set<number>>(new Set())
   const shownAchievementsRef = useRef<Set<string>>(new Set())
+  const questClaimedRef = useRef<Set<string>>(new Set())
+  const lessonSegmentClaimedRef = useRef<Set<number>>(new Set())
 
   // New wave-3 state
   const [showStreakModal, setShowStreakModal] = useState(false)
@@ -251,12 +295,19 @@ export default function App() {
   const [showTree, setShowTree] = useState(true)
   const [weakSkills, setWeakSkills] = useState<WeakSkillItem[]>([])
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>([])
+  const [performanceSummary, setPerformanceSummary] = useState<PerformanceSummary | null>(null)
+  const [performanceDays, setPerformanceDays] = useState<7 | 14 | 30>(14)
+  const [performanceTrend, setPerformanceTrend] = useState<PerformanceTrend | null>(null)
   const [stories, setStories] = useState<Story[]>([])
   const [storySession, setStorySession] = useState<StoryDetail | null>(null)
   const [nextBestLesson, setNextBestLesson] = useState<AdaptiveNextLesson | null>(null)
   const [patternDiagnosis, setPatternDiagnosis] = useState<PatternDiagnosis | null>(null)
   const [generatedQuestions, setGeneratedQuestions] = useState<DrillQ[]>([])
   const [generatingPractice, setGeneratingPractice] = useState<string | null>(null) // skill_tag being generated
+  const recentQuestionIdxRef = useRef<number[]>([])
+  const recentOutcomesRef = useRef<{ type: string; ok: boolean; prompt: string; responseMs: number }[]>([])
+  const skillMasteryRef = useRef<Record<string, { mastery: number; lastSeenAt: number }>>({})
+  const masteryDirtyRef = useRef(0)
 
   // Chat state
   const [chatMsgs,   setChatMsgs]  = useState<Msg[]>([])
@@ -298,9 +349,12 @@ export default function App() {
           api.getWeakSkillReport(),
           api.getReviewQueue(12),
           api.getPatternDiagnosis(),
+          api.getPerformanceSummary(14),
+          api.getPerformanceTrend(30),
+          api.getAdaptiveMastery(),
         ])
         const [
-          lr, sr, dr, pr, c1r, c2r, nbr, settingsR, missionsR, planR, weakR, queueR, diagR,
+          lr, sr, dr, pr, c1r, c2r, nbr, settingsR, missionsR, planR, weakR, queueR, diagR, perfR, trendR, masteryR,
         ] = settled
         const l = lr.status === 'fulfilled' ? lr.value : null
         if (!l) {
@@ -324,6 +378,21 @@ export default function App() {
         if (weakR.status === 'fulfilled') setWeakSkills(weakR.value.skills || [])
         if (queueR.status === 'fulfilled') setReviewQueue(queueR.value.items || [])
         if (diagR.status === 'fulfilled') setPatternDiagnosis(diagR.value)
+        if (perfR.status === 'fulfilled') setPerformanceSummary(perfR.value)
+        if (trendR.status === 'fulfilled') setPerformanceTrend(trendR.value)
+        if (masteryR.status === 'fulfilled' && masteryR.value?.mastery) {
+          const loaded: Record<string, { mastery: number; lastSeenAt: number }> = {}
+          for (const [k, v] of Object.entries(masteryR.value.mastery)) {
+            const item = (v || {}) as { mastery?: number; lastSeenAt?: number }
+            const mastery = Number(item.mastery ?? 0.6)
+            const lastSeenAt = Number(item.lastSeenAt ?? Date.now())
+            loaded[k] = {
+              mastery: Math.max(0, Math.min(1, Number.isFinite(mastery) ? mastery : 0.6)),
+              lastSeenAt: Number.isFinite(lastSeenAt) ? lastSeenAt : Date.now(),
+            }
+          }
+          skillMasteryRef.current = loaded
+        }
         const settingsRes = settingsR.status === 'fulfilled' ? settingsR.value : { settings: {} as Record<string, string> }
         const firstUnlockedUnit = UNIT_META.find(u => (l.elo || 800) >= CEFR_ELO[u.cefr].min)?.id || UNIT_META[0]?.id || ''
         setCurrentUnitId(settingsRes.settings?.current_unit || firstUnlockedUnit)
@@ -341,6 +410,20 @@ export default function App() {
 
   useEffect(()=>{ chatBottomRef.current?.scrollIntoView({behavior:'smooth'}) },[chatMsgs])
   useEffect(()=>{ mBottomRef.current?.scrollIntoView({behavior:'smooth'}) },[mMsgs])
+  useEffect(() => {
+    if (mode !== 'performance') return
+    api.getPerformanceSummary(performanceDays).then(setPerformanceSummary).catch(() => {})
+    api.getPerformanceTrend(30).then(setPerformanceTrend).catch(() => {})
+  }, [mode, performanceDays])
+  useEffect(() => {
+    const flushOnUnload = () => {
+      if (masteryDirtyRef.current <= 0) return
+      // Best-effort final save on exit/navigation.
+      void api.saveAdaptiveMastery(skillMasteryRef.current).catch(() => {})
+    }
+    window.addEventListener('beforeunload', flushOnUnload)
+    return () => window.removeEventListener('beforeunload', flushOnUnload)
+  }, [])
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
@@ -481,6 +564,52 @@ export default function App() {
     }
   }, [streak, dailyGoalCelebrated])
 
+  // ── Quest completion rewards (Duolingo/Babbel style) ─────────────────────
+  useEffect(() => {
+    const quests = [
+      { id: 'dq-15-drills', done: score.t >= 15, title: 'Quest Complete: 15 Drills', xp: 20, icon: '🧩' },
+      { id: 'dq-8-correct', done: score.c >= 8, title: 'Quest Complete: 8 Correct', xp: 20, icon: '✅' },
+      { id: 'dq-5-combo', done: comboStreak >= 5, title: 'Quest Complete: 5x Combo', xp: 25, icon: '⚡' },
+    ]
+    for (const q of quests) {
+      if (!q.done || questClaimedRef.current.has(q.id)) continue
+      questClaimedRef.current.add(q.id)
+      setSessionXp(s => s + q.xp)
+      setXpPop(q.xp)
+      toast.success(`${q.icon} ${q.title} (+${q.xp} bonus XP)`, { duration: 2800 })
+      addAchievement({
+        id: q.id,
+        title: q.title,
+        description: 'Daily quest reward unlocked.',
+        icon: q.icon,
+        xp: q.xp,
+      })
+    }
+  }, [score.t, score.c, comboStreak])
+
+  // ── Lesson segment milestones (every 10 attempts) ────────────────────────
+  useEffect(() => {
+    if (score.t <= 0 || score.t % 10 !== 0) return
+    if (lessonSegmentClaimedRef.current.has(score.t)) return
+    lessonSegmentClaimedRef.current.add(score.t)
+    const perfect = score.c >= score.t
+    const bonus = perfect ? 30 : 18
+    setSessionXp(s => s + bonus)
+    setXpPop(bonus)
+    confetti({
+      particleCount: perfect ? 110 : 75,
+      spread: perfect ? 80 : 60,
+      origin: { y: 0.55 },
+      colors: perfect ? ['#58cc02', '#ffd900', '#4f9cf9'] : ['#ffd900', '#4f9cf9'],
+    })
+    toast.success(
+      perfect
+        ? `Perfect set! ${score.c}/${score.t} correct (+${bonus} XP)`
+        : `Lesson set complete: ${score.t} attempts (+${bonus} XP)`,
+      { duration: 3200 },
+    )
+  }, [score.t, score.c])
+
   // ── Lesson milestone achievements ────────────────────────────────────────
   useEffect(() => {
     if (!learner) return
@@ -553,30 +682,106 @@ export default function App() {
   function chooseAdaptiveNextIndex() {
     const pool = getEligibleQuestions()
     const total = pool.length
+    if (total <= 1) return 0
     const current = qi % total
+    const focusPrompts = new Set((adaptive?.focus_prompts || []).map(f => f.prompt))
+    const weakType = adaptive?.weak_types?.[0]?.q_type || ''
+    const reviewQTypes = new Set((reviewQueue || []).slice(0, 4).map(r => r.q_type))
+    const weakPromptHints = new Set(
+      mistakes.slice(-6).flatMap(m => [m.prompt, m.answer]).map(s => s.trim()).filter(Boolean),
+    )
+    const recentIdx = recentQuestionIdxRef.current
+    const recentOutcomes = recentOutcomesRef.current.slice(-16)
+    const recentByType = new Map<string, { total: number; wrong: number }>()
+    for (const row of recentOutcomes) {
+      const prev = recentByType.get(row.type) || { total: 0, wrong: 0 }
+      prev.total += 1
+      if (!row.ok) prev.wrong += 1
+      recentByType.set(row.type, prev)
+    }
+    const recentTotal = recentOutcomes.length
+    const recentCorrect = recentOutcomes.filter(r => r.ok).length
+    const recentAccuracy = recentTotal > 0 ? recentCorrect / recentTotal : 0.75
+    const avgResponseMs =
+      recentTotal > 0 ? recentOutcomes.reduce((s, r) => s + r.responseMs, 0) / recentTotal : 5500
 
-    const byPrompt = new Set((adaptive?.focus_prompts || []).map(f => f.prompt))
-    const promptPool = pool
+    // Keep learner around a healthy challenge band.
+    // Too easy -> increase complexity, too hard/slow -> stabilize with simpler prompts.
+    const struggle = recentAccuracy < 0.62 || (recentAccuracy < 0.7 && avgResponseMs > 10000)
+    const cruising = recentAccuracy > 0.84 && avgResponseMs < 7000
+
+    const candidates = pool
       .map((q, i) => ({ q, i }))
-      .filter(({ q, i }) => i !== current && byPrompt.has(q.prompt))
-      .map(({ i }) => i)
+      .filter(({ i }) => i !== current)
+      .map(({ q, i }) => {
+        let weight = 1
+        const qDiff = questionDifficultyWeight(q.type)
+        const sk = skillKeyForQuestion(q)
 
-    if (promptPool.length > 0 && Math.random() < 0.6) {
-      return promptPool[Math.floor(Math.random() * promptPool.length)]
+        // Avoid immediate repetition unless pool is tiny.
+        if (recentIdx.includes(i)) weight *= 0.15
+        if (recentIdx.slice(-1)[0] === i) weight *= 0.05
+
+        // Backend adaptive priorities.
+        if (focusPrompts.has(q.prompt)) weight += 2.3
+        if (weakType && q.type === weakType) weight += 1.8
+        if (reviewQTypes.has(q.type)) weight += 0.8
+
+        // Revisit patterns the learner recently missed.
+        if (weakPromptHints.has(q.prompt) || weakPromptHints.has(q.answer)) weight += 1.0
+
+        // Per-type recency error-rate boost.
+        const stat = recentByType.get(q.type)
+        if (stat && stat.total >= 2) {
+          const errRate = stat.wrong / stat.total
+          if (errRate > 0.35) weight += (errRate - 0.35) * 2.5
+        }
+
+        // Mastery decay model: strong skills fade over time and get resurfaced.
+        const s = skillMasteryRef.current[sk]
+        if (s) {
+          const elapsedHours = Math.max(0, (Date.now() - s.lastSeenAt) / 3_600_000)
+          const forgetting = Math.min(0.35, elapsedHours * 0.012)
+          const effectiveMastery = Math.max(0, Math.min(1, s.mastery - forgetting))
+          const reinforcementNeed = 1 - effectiveMastery
+          weight += reinforcementNeed * 1.4
+
+          // Mild diversification: avoid hammering same skill back-to-back
+          // unless mastery says it still needs focused practice.
+          if (Date.now() - s.lastSeenAt < 90_000 && reinforcementNeed < 0.55) {
+            weight -= 0.25
+          }
+        } else {
+          // Unseen skill gets a slight discovery boost.
+          weight += 0.25
+        }
+
+        // Difficulty autopilot based on recent performance.
+        if (struggle) {
+          if (qDiff <= 1.0) weight += 0.9
+          if (qDiff >= 1.25) weight -= 0.45
+        } else if (cruising) {
+          if (qDiff >= 1.2) weight += 0.75
+          if (qDiff <= 0.7) weight -= 0.25
+        }
+
+        // Streak bonus nudges toward productive output.
+        if (comboStreak >= 4 && !struggle) {
+          if (q.type === 'translate' || q.type === 'listen') weight += 0.55
+          if (q.type === 'mcq') weight -= 0.15
+        }
+
+        return { i, weight: Math.max(weight, 0.05) }
+      })
+
+    if (candidates.length === 0) return (qi + 1) % total
+    const totalWeight = candidates.reduce((s, c) => s + c.weight, 0)
+    let r = Math.random() * totalWeight
+    for (const c of candidates) {
+      r -= c.weight
+      if (r <= 0) return c.i
     }
-
-    const weakType = adaptive?.weak_types?.[0]?.q_type
-    if (weakType) {
-      const typePool = pool
-        .map((q, i) => ({ q, i }))
-        .filter(({ q, i }) => i !== current && q.type === weakType)
-        .map(({ i }) => i)
-      if (typePool.length > 0 && Math.random() < 0.7) {
-        return typePool[Math.floor(Math.random() * typePool.length)]
-      }
-    }
-
-    return (qi + 1) % total
+    return candidates[candidates.length - 1].i
   }
 
   function indicesForLevel(level: string): number[] {
@@ -635,6 +840,41 @@ export default function App() {
     setFeedbackVisible(true)
     setScore(s=>({c:s.c+(ok?1:0),t:s.t+1}))
     setUnitStats(s => ({ answered: s.answered + 1, correct: s.correct + (ok ? 1 : 0) }))
+    if (!checkpointSession) {
+      const idx = qi % pool.length
+      recentQuestionIdxRef.current = [...recentQuestionIdxRef.current.slice(-4), idx]
+      recentOutcomesRef.current = [
+        ...recentOutcomesRef.current.slice(-19),
+        { type: q.type, ok, prompt: q.prompt, responseMs },
+      ]
+
+      // Update session mastery estimate for this skill bucket.
+      // Correct answers raise mastery gradually; wrong answers lower it faster.
+      const sk = skillKeyForQuestion(q)
+      const prev = skillMasteryRef.current[sk] || { mastery: 0.6, lastSeenAt: Date.now() }
+      const elapsedHours = Math.max(0, (Date.now() - prev.lastSeenAt) / 3_600_000)
+      const decay = Math.max(0.7, 1 - elapsedHours * 0.015)
+      const decayed = prev.mastery * decay
+      const delta = ok ? 0.11 : -0.2
+      skillMasteryRef.current[sk] = {
+        mastery: Math.max(0, Math.min(1, decayed + delta)),
+        lastSeenAt: Date.now(),
+      }
+      masteryDirtyRef.current += 1
+      if (masteryDirtyRef.current >= 5) {
+        masteryDirtyRef.current = 0
+        void api.saveAdaptiveMastery(skillMasteryRef.current).catch(() => {})
+      }
+    }
+    void api
+      .logLessonMemory({
+        lesson_id: `drill:${Date.now()}:${q.type}`,
+        title: `Drill ${ok ? 'correct' : 'incorrect'} · ${q.type}`,
+        unit_id: currentUnitId || q.unitId || '',
+        source: 'drill',
+        detail: `prompt="${toLogSnippet(q.prompt)}" | your_answer="${toLogSnippet(userAnswer)}" | expected="${toLogSnippet(q.answer)}" | time_ms=${responseMs}`,
+      })
+      .catch(() => {})
     if (checkpointSession) {
       setCheckpointSession(prev => prev ? ({ ...prev, correct: prev.correct + (ok ? 1 : 0) }) : prev)
     }
@@ -642,7 +882,9 @@ export default function App() {
       setComboStreak(c=>c+1)
       const xp = 10 + Math.min(comboStreak*3, 15)
       setXpPop(xp)
+      setSessionXp(s => s + Math.round(xp * xpMultiplierFromCombo(comboStreak + 1)))
       if (comboStreak >= 4) confetti({particleCount:90,spread:75,origin:{y:.6},colors:['#58cc02','#ffd900','#4f9cf9','#a78bfa']})
+      if (comboStreak + 1 === 5) toast.success('Combo master! Bonus multiplier unlocked ⚡')
     } else {
       setComboStreak(0)
       setHearts(h=>{const n=[...h];const li=n.lastIndexOf(true);if(li>=0)n[li]=false;return n})
@@ -840,6 +1082,35 @@ export default function App() {
     }
   }
 
+  function masteryStats() {
+    const values = Object.values(skillMasteryRef.current || {})
+    const count = values.length
+    if (!count) return { count: 0, avg: 0 }
+    const avg = values.reduce((s, v) => s + (Number(v?.mastery) || 0), 0) / count
+    return { count, avg }
+  }
+
+  async function flushMasteryNow() {
+    try {
+      await api.saveAdaptiveMastery(skillMasteryRef.current)
+      masteryDirtyRef.current = 0
+      toast.success('Adaptive mastery saved')
+    } catch {
+      toast.error('Could not save adaptive mastery')
+    }
+  }
+
+  async function resetMasteryNow() {
+    try {
+      skillMasteryRef.current = {}
+      masteryDirtyRef.current = 0
+      await api.saveAdaptiveMastery({})
+      toast.success('Adaptive mastery reset')
+    } catch {
+      toast.error('Could not reset adaptive mastery')
+    }
+  }
+
   function practicePrompt(prompt: string) {
     const pool = QUESTIONS
     const idx = pool.findIndex(q => q.prompt === prompt)
@@ -946,7 +1217,12 @@ export default function App() {
 
   function switchMode(m:Mode) {
     setMode(m)
-    if (m==='learn')   setShowTree(true)
+    if (m==='learn') {
+      setShowTree(true)
+      setSessionXp(0)
+      questClaimedRef.current.clear()
+      lessonSegmentClaimedRef.current.clear()
+    }
     if (m==='chat')    initChat()
     if (m==='mathieu') initMathieu()
     if (m==='stories') {
@@ -994,6 +1270,12 @@ export default function App() {
   const xpGoal   = streak?.daily_goal_xp || 50
   const xpPct    = Math.min(100, Math.round(xpToday/Math.max(xpGoal,1)*100))
   const curStreak = streak?.current_streak || 0
+  const comboMult = xpMultiplierFromCombo(comboStreak)
+  const dailyQuests = [
+    { id: 'q1', label: 'Complete 15 drills', progress: Math.min(score.t, 15), goal: 15 },
+    { id: 'q2', label: 'Get 8 correct answers', progress: Math.min(score.c, 8), goal: 8 },
+    { id: 'q3', label: 'Reach a 5x combo', progress: Math.min(comboStreak, 5), goal: 5 },
+  ]
 
   const CEFR = [{l:'A1',min:0},{l:'A2',min:1000},{l:'B1',min:1200},{l:'B2',min:1400},{l:'C1',min:1600},{l:'C2',min:1800}]
   const cefrCls = (i:number) => { const next=CEFR[i+1]?.min??9999; return elo>=next?'done':elo>=CEFR[i].min?'active':'locked' }
@@ -1028,6 +1310,7 @@ export default function App() {
     {id:'stories'     as Mode,icon:'📚',label:'Stories'},
     {id:'review'      as Mode,icon:'🔁',label:'Review'},
     {id:'leaderboard' as Mode,icon:'🏆',label:'Leaderboard'},
+    {id:'performance' as Mode,icon:'📈',label:'Performance'},
     {id:'memory'      as Mode,icon:'📓',label:'Memory'},
     {id:'map'         as Mode,icon:'🗺️',label:'Course'},
     {id:'grammar'     as Mode,icon:'📐',label:'Grammar'},
@@ -1180,6 +1463,7 @@ export default function App() {
             </button>
           ))}
           <button className={`mode-tab${mode==='memory'?' active':''}`} onClick={()=>switchMode('memory')}>📓</button>
+          <button className={`mode-tab${mode==='performance'?' active':''}`} onClick={()=>switchMode('performance')}>📈</button>
           <button className={`mode-tab${mode==='map'?' active':''}`} onClick={()=>switchMode('map')}>🗺️</button>
           <button className={`mode-tab${mode==='grammar'?' active':''}`} onClick={()=>switchMode('grammar')}>📐</button>
         </div>
@@ -1432,6 +1716,33 @@ export default function App() {
                   {mistakes.length>0&&<span style={{fontSize:11,fontWeight:700,color:'var(--red)',background:'var(--red-dim)',padding:'3px 10px',borderRadius:99}}>
                     ⚠️ {mistakes.length} to review
                   </span>}
+                  <span style={{fontSize:11,fontWeight:700,color:'var(--blue-b)',background:'rgba(79,156,249,.12)',padding:'3px 10px',borderRadius:99}}>
+                    Session XP {sessionXp}
+                  </span>
+                  <span style={{fontSize:11,fontWeight:700,color:'var(--purple)',background:'rgba(167,139,250,.14)',padding:'3px 10px',borderRadius:99}}>
+                    Multiplier {comboMult.toFixed(1)}x
+                  </span>
+                </div>
+
+                <div style={{marginBottom:14,padding:'10px 12px',background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12}}>
+                  <div style={{fontSize:11,fontWeight:800,letterSpacing:'.08em',textTransform:'uppercase',color:'var(--amber)',marginBottom:8}}>
+                    Daily Quests
+                  </div>
+                  <div style={{display:'grid',gap:7}}>
+                    {dailyQuests.map(qs => {
+                      const pct = Math.round((qs.progress / qs.goal) * 100)
+                      return (
+                        <div key={qs.id}>
+                          <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:'var(--t2)',marginBottom:3}}>
+                            <span>{qs.label}</span><span>{qs.progress}/{qs.goal}</span>
+                          </div>
+                          <div style={{height:6,background:'var(--surface3)',borderRadius:99,overflow:'hidden'}}>
+                            <div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,var(--amber),#ff9600)',borderRadius:99}} />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
 
                 {/* Adaptive coach */}
@@ -1547,7 +1858,8 @@ export default function App() {
                     Check
                   </button>}
                   {answered&&!correct&&<div style={{fontSize:14,fontWeight:600,color:'var(--t2)',padding:'8px 0'}}>
-                    <strong style={{color:'var(--text)'}}>Correct answer:</strong> {(q as any).answer}
+                    <strong style={{color:'var(--text)'}}>Correct answer:</strong>{' '}
+                    <WordHints text={(q as any).answer} pair={hintPair} />
                   </div>}
                 </>}
 
@@ -1571,7 +1883,8 @@ export default function App() {
                     Check
                   </button>}
                   {answered&&!correct&&<div style={{fontSize:14,fontWeight:600,color:'var(--t2)',padding:'8px 0'}}>
-                    <strong style={{color:'var(--text)'}}>Answer:</strong> {(q as any).answer}
+                    <strong style={{color:'var(--text)'}}>Answer:</strong>{' '}
+                    <WordHints text={(q as any).answer} pair={hintPair} />
                   </div>}
                 </>}
 
@@ -1604,7 +1917,8 @@ export default function App() {
                     ) : (
                       <>
                         <div style={{fontSize:13,color:'var(--t2)',marginBottom:6}}>
-                          <strong style={{color:'var(--text)'}}>Correct:</strong> {arrangeAiFeedback?.corrected || q.answer}
+                          <strong style={{color:'var(--text)'}}>Correct:</strong>{' '}
+                          <WordHints text={arrangeAiFeedback?.corrected || q.answer} pair={hintPair} />
                         </div>
                         <div style={{fontSize:13,color:'var(--t2)'}}>
                           {arrangeAiFeedback?.explanation || 'French word order usually follows subject + verb + complements.'}
@@ -1612,6 +1926,13 @@ export default function App() {
                         <div style={{fontSize:12,color:'var(--blue-b)',marginTop:6,fontWeight:700}}>
                           Next step: {arrangeAiFeedback?.next_step || 'Retry one similar sentence now.'}
                         </div>
+                        <button
+                          className="check-btn ready"
+                          style={{marginTop:8,padding:'8px 10px',fontSize:12}}
+                          onClick={() => practicePrompt(q.prompt)}
+                        >
+                          Retry Similar Prompt
+                        </button>
                       </>
                     )}
                   </div>
@@ -1927,6 +2248,108 @@ export default function App() {
           {/* ── LEADERBOARD ── */}
           {mode === 'leaderboard' && <Leaderboard />}
 
+          {/* ── PERFORMANCE ── */}
+          {mode === 'performance' && (
+            <div style={{padding:'18px 20px',height:'100%',overflowY:'auto'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                <div>
+                  <div style={{fontSize:'1.15rem',fontWeight:900}}>📈 Performance</div>
+                  <div style={{fontSize:12,color:'var(--t3)'}}>Last {performanceSummary?.days ?? performanceDays} days</div>
+                </div>
+                <button
+                  className="check-btn ready"
+                  style={{padding:'8px 10px',fontSize:12}}
+                  onClick={()=>api.getPerformanceSummary(performanceDays).then(setPerformanceSummary).catch(()=>toast.error('Could not refresh performance data'))}
+                >
+                  Refresh
+                </button>
+              </div>
+
+              <div style={{display:'flex',gap:8,marginBottom:12}}>
+                {([7, 14, 30] as const).map(d => (
+                  <button
+                    key={d}
+                    className="check-btn"
+                    style={{
+                      padding:'7px 10px',
+                      fontSize:12,
+                      background: performanceDays === d ? 'var(--blue-dim)' : 'var(--surface2)',
+                      borderColor: performanceDays === d ? 'var(--blue)' : 'var(--border)',
+                    }}
+                    onClick={() => setPerformanceDays(d)}
+                  >
+                    {d}d
+                  </button>
+                ))}
+              </div>
+
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:10,marginBottom:14}}>
+                <div className="stat-card">
+                  <div className="stat-card-label">Attempts</div>
+                  <div className="stat-card-value">{performanceSummary?.attempts ?? 0}</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-card-label">Accuracy</div>
+                  <div className="stat-card-value" style={{color:'var(--green-b)'}}>
+                    {Math.round((performanceSummary?.accuracy ?? 0) * 100)}%
+                  </div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-card-label">Drill logs</div>
+                  <div className="stat-card-value">{performanceSummary?.by_source?.drill ?? 0}</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-card-label">Checkpoint logs</div>
+                  <div className="stat-card-value">{performanceSummary?.by_source?.checkpoint ?? 0}</div>
+                </div>
+              </div>
+
+              <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12,padding:'12px 14px',marginBottom:12}}>
+                <div style={{fontSize:12,fontWeight:800,color:'var(--t3)',marginBottom:8}}>Accuracy trend (last 30 days)</div>
+                {!(performanceTrend?.points?.length) ? (
+                  <div style={{fontSize:12,color:'var(--t3)'}}>Not enough trend data yet.</div>
+                ) : (
+                  <div style={{display:'flex',alignItems:'end',gap:4,height:86}}>
+                    {performanceTrend.points.slice(-30).map((p, i) => {
+                      const h = Math.max(8, Math.round(p.accuracy * 80))
+                      return (
+                        <div key={`${p.day}-${i}`} title={`${p.day} · ${Math.round(p.accuracy * 100)}% · ${p.attempts} attempts`} style={{flex:1,minWidth:3}}>
+                          <div style={{height:h,background:'linear-gradient(180deg,var(--blue),var(--purple))',borderRadius:4,opacity:p.attempts > 0 ? 0.95 : 0.35}} />
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div style={{background:'rgba(79,156,249,.08)',border:'1px solid rgba(79,156,249,.22)',borderRadius:12,padding:'10px 12px',marginBottom:12}}>
+                <div style={{fontSize:11,fontWeight:800,letterSpacing:'.08em',textTransform:'uppercase',color:'var(--blue-b)',marginBottom:4}}>
+                  Coach Insight
+                </div>
+                <div style={{fontSize:13,color:'var(--t2)'}}>
+                  {performanceInsight(performanceSummary)}
+                </div>
+              </div>
+
+              <div style={{display:'grid',gap:10}}>
+                {(performanceSummary?.by_type || []).length === 0 && (
+                  <div style={{fontSize:13,color:'var(--t3)'}}>No performance data yet. Complete a few drills first.</div>
+                )}
+                {(performanceSummary?.by_type || []).map((t, i) => (
+                  <div key={`${t.q_type}-${i}`} style={{padding:'10px 12px',background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                      <div style={{fontSize:14,fontWeight:800,color:'var(--text)'}}>{t.q_type.toUpperCase()}</div>
+                      <div style={{fontSize:12,color:'var(--t2)'}}>{t.attempts} attempts</div>
+                    </div>
+                    <div style={{marginTop:6,fontSize:12,color:'var(--t2)'}}>
+                      Accuracy: <strong style={{color:'var(--text)'}}>{Math.round(t.accuracy * 100)}%</strong> · Avg response: <strong style={{color:'var(--text)'}}>{Math.round(t.avg_response_ms / 100) / 10}s</strong>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* ── SETTINGS ── */}
           {mode==='settings' && (
             <div style={{height:'100%',overflowY:'auto',padding:'20px'}}>
@@ -2077,6 +2500,26 @@ export default function App() {
                   >
                     ⌨️ View Shortcuts <span style={{fontSize:11,color:'var(--t3)',marginLeft:4}}>(press ?)</span>
                   </button>
+                </div>
+
+                {/* ── Adaptive mastery debug ── */}
+                <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12,padding:14}}>
+                  <div style={{fontSize:12,fontWeight:700,color:'var(--t3)',marginBottom:8}}>Adaptive mastery engine</div>
+                  <div style={{fontSize:13,color:'var(--t2)',marginBottom:10}}>
+                    Tracked skills: <strong style={{color:'var(--text)'}}>{masteryStats().count}</strong> · Avg mastery: <strong style={{color:'var(--text)'}}>{Math.round(masteryStats().avg * 100)}%</strong> · Unsaved updates: <strong style={{color:'var(--text)'}}>{masteryDirtyRef.current}</strong>
+                  </div>
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                    <button className="check-btn ready" style={{padding:'9px 10px',fontSize:13}} onClick={flushMasteryNow}>
+                      Save Mastery Now
+                    </button>
+                    <button
+                      className="check-btn"
+                      style={{padding:'9px 10px',fontSize:13,borderColor:'rgba(255,75,75,.4)',color:'var(--red)'}}
+                      onClick={resetMasteryNow}
+                    >
+                      Reset Mastery
+                    </button>
+                  </div>
                 </div>
 
                 {/* ── Danger zone: reset progress ── */}

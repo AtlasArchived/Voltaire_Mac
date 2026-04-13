@@ -1,6 +1,7 @@
 {
   "name": "voltaire-desktop",
-  "version": "1.0.0",
+  "version": "2.0.0",
+  "description": "Voltaire — French learning desktop shell (Electron + Next.js + FastAPI)",
   "private": true,
   "main": "electron/main.js",
   "scripts": {
@@ -16,6 +17,7 @@
   "build": {
     "appId": "com.voltaire.desktop",
     "productName": "Voltaire",
+    "asar": false,
     "directories": {
       "output": "dist"
     },
@@ -23,9 +25,14 @@
       "electron/**/*",
       "backend/**/*",
       "frontend/**/*",
-      ".env",
-      "cato_mind.db",
-      "package.json"
+      "package.json",
+      "!**/.env",
+      "!**/.env.*",
+      "!**/cato_mind.db",
+      "!logs/**",
+      "!.git/**",
+      "!frontend/.next/cache/**",
+      "!**/*.log"
     ],
     "mac": {
       "icon": "build/Voltaire.icns",
