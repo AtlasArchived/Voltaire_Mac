@@ -1,3 +1,4 @@
+'use client'
 /**
  * lib/api.ts
  * Voltaire — Typed API client
@@ -144,6 +145,17 @@ export interface StoryDetail extends Story {
     correct:      number
     explanation:  string
   }[]
+}
+
+export interface PlacementQuizQuestion {
+  question: string;
+  options: string[];
+  answer: string;
+}
+
+export interface PlacementQuizData {
+  title: string;
+  questions: PlacementQuizQuestion[];
 }
 
 export interface DrillQuestion {
@@ -342,7 +354,7 @@ export const api = {
     post<LessonResponse>('/lesson/answer', { user_input, session_id }),
 
   // Streaming answer — returns a ReadableStream
-  answerStream: (user_input: string, history: {role:string;text:string}[] = []) =>
+  answerStream: (user_input: string, history: {role:string;text:string}[]) =>
     fetch(`${BASE}/lesson/answer/stream`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -439,6 +451,7 @@ export const api = {
 
   // Onboarding
   getOnboardingStatus: () => get<{ onboarded: boolean }>('/onboarding/status'),
+  getPlacementQuiz: () => get<PlacementQuizData>('/placement-quiz'),
   completeOnboarding:  (data: {
     name: string; goal: string; daily_xp: number; placement_score: number
   }) => post<{ ok: boolean }>('/onboarding/complete', data),

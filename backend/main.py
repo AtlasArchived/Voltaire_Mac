@@ -1662,6 +1662,13 @@ def onboarding_status():
             return {"onboarded": False}
 
 
+from placement_quiz import get_placement_quiz
+
+@app.get("/api/placement-quiz")
+def get_placement_quiz_endpoint():
+    return get_placement_quiz()
+
+
 @app.post("/api/onboarding/complete")
 def complete_onboarding(req: OnboardingRequest):
     try:
@@ -1733,7 +1740,7 @@ def lookup_word(word: str):
     """
     try:
         import sqlite3
-        word_lower = word.lower().strip(".,!?;:'\"«»—")
+        word_lower = word.lower().strip(".,!?;:'"«»—")
         with sqlite3.connect(get_db_path()) as db:
             row = db.execute(
                 "SELECT french, english, latin_root, is_cognate FROM vocabulary WHERE LOWER(french)=? LIMIT 1",

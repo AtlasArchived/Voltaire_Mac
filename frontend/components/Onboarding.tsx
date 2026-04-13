@@ -8,41 +8,15 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../lib/api'
 import toast from 'react-hot-toast'
+import PlacementQuiz from './PlacementQuiz'
 
 interface OnboardingProps {
   onComplete: () => void
 }
 
-const PLACEMENT_QS = [
-  {
-    q:    'What does "bonjour" mean?',
-    opts: ['Goodbye', 'Hello', 'Please', 'Thank you'],
-    ans:  1, level: 'A1',
-  },
-  {
-    q:    'Complete: "Je ___ français." (I speak French)',
-    opts: ['parle', 'mange', 'suis', 'vais'],
-    ans:  0, level: 'A1',
-  },
-  {
-    q:    'Passé composé of "aller" (to go) for "je":',
-    opts: ["j'ai allé", 'je suis allé', "j'allais", "j'irai"],
-    ans:  1, level: 'A2',
-  },
-  {
-    q:    'Which is correct?',
-    opts: ['Il faut que tu vas', 'Il faut que tu ailles', 'Il faut que tu vas aller', 'Il faut tu ailles'],
-    ans:  1, level: 'B1',
-  },
-  {
-    q:    '"Nonobstant" means:',
-    opts: ['Nevertheless', 'Obviously', 'Immediately', 'Elsewhere'],
-    ans:  0, level: 'B2',
-  },
-]
-
 const GOALS = [
   { value: 'travel',   emoji: '🗼', title: 'Travel & Daily Life',         sub: 'Practical conversation, survival French, real situations' },
+  { value: 'residency', emoji: '🏠', title: 'Residency & Integration',   sub: 'Daily life, administrative tasks, and cultural nuances' },
   { value: 'reading',  emoji: '📚', title: 'Literature & Culture',        sub: 'Deep vocabulary, classical register, authentic texts' },
   { value: 'career',   emoji: '💼', title: 'Career & Professional',       sub: 'Formal register, business vocabulary, interviews' },
   { value: 'personal', emoji: '🧠', title: 'Heritage & Personal Growth',  sub: 'Cultural connection, warm conversational tone' },
@@ -75,16 +49,15 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   const [name,      setName]    = useState('')
   const [goal,      setGoal]    = useState('')
   const [xp,        setXp]      = useState(50)
-  const [answers,   setAnswers] = useState<number[]>([])
+  const [placementScore, setPlacementScore] = useState<number|null>(null)
   const [loading,   setLoading] = useState(false)
   const [direction, setDir]     = useState(1)
   const [logoReady, setLogoReady] = useState(false)
 
   useEffect(() => { const t = setTimeout(() => setLogoReady(true), 100); return () => clearTimeout(t) }, [])
 
-  const totalSteps = 5
-  const correct    = answers.filter((a, i) => a === PLACEMENT_QS[i]?.ans).length
-  const startElo   = 800 + correct * 80
+  const totalSteps = 4
+  const startElo   = 800 + (placementScore || 0) * 80
 
   function goTo(s: number) {
     setDir(s > step ? 1 : -1)
@@ -92,9 +65,13 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   }
 
   async function finish() {
+    if (placementScore === null) {
+      toast.error('Placement quiz not completed.')
+      return
+    }
     setLoading(true)
     try {
-      await api.completeOnboarding({ name, goal, daily_xp: xp, placement_score: correct })
+      await api.completeOnboarding({ name, goal, daily_xp: xp, placement_score: placementScore })
       toast.success(`Bienvenue, ${name}! Voltaire is ready.`)
       onComplete()
     } catch {
@@ -102,6 +79,11 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     } finally {
       setLoading(false)
     }
+  }
+
+  function handlePlacementComplete(score: number) {
+    setPlacementScore(score)
+    goTo(2)
   }
 
   return (
@@ -233,8 +215,13 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             </div>
           )}
 
-          {/* ── Step 1: Goal ── */}
+          {/* ── Step 1: Placement Quiz ── */}
           {step === 1 && (
+            <PlacementQuiz onComplete={handlePlacementComplete} />
+          )}
+
+          {/* ── Step 2: Goal ── */}
+          {step === 2 && (
             <div>
               <div style={{ fontSize: '1.35rem', fontWeight: 800, marginBottom: 6 }}>
                 What's driving you, {name}?
@@ -246,7 +233,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
                 {GOALS.map(g => (
                   <button
                     key={g.value}
-                    onClick={() => { setGoal(g.value); goTo(2) }}
+                    onClick={() => { setGoal(g.value); goTo(3) }}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 16,
                       background: goal === g.value ? 'rgba(79,156,249,.15)' : 'var(--surface2)',
@@ -274,115 +261,6 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
               </div>
             </div>
           )}
-
-          {/* ── Step 2: Placement test ── */}
-          {step === 2 && (() => {
-            const qi = answers.length
-            if (qi >= PLACEMENT_QS.length) {
-              // Placement complete — encouragement screen
-              return (
-                <div style={{ textAlign: 'center', padding: '8px 0' }}>
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: 'spring', stiffness: 260, damping: 18 }}
-                    style={{ fontSize: '3rem', marginBottom: 16 }}
-                  >
-                    {correct >= 4 ? '🎓' : correct >= 2 ? '📗' : '🌱'}
-                  </motion.div>
-                  <div style={{ fontFamily: 'var(--serif)', fontSize: '1.4rem', color: 'var(--blue)', marginBottom: 8 }}>
-                    {correct >= 4 ? 'Strong foundation!' : correct >= 2 ? 'False beginner!' : 'Fresh start!'}
-                  </div>
-                  <div style={{ fontSize: '14px', color: 'var(--t2)', marginBottom: 4 }}>
-                    {correct}/5 correct · Starting ELO: <strong style={{ color: 'var(--text)' }}>{startElo}</strong>
-                  </div>
-                  <div style={{
-                    background: 'rgba(79,156,249,.1)', border: '1px solid rgba(79,156,249,.25)',
-                    borderRadius: 14, padding: '14px 18px', margin: '16px 0 20px',
-                    fontSize: '14px', color: 'var(--t2)', lineHeight: 1.65,
-                  }}>
-                    Great job! We've personalized your learning path based on these results.
-                    Voltaire will calibrate every lesson to your exact level.
-                  </div>
-                  <button
-                    onClick={() => goTo(3)}
-                    style={{
-                      width: '100%', padding: '14px', borderRadius: 14, border: 'none',
-                      background: 'var(--blue)', color: '#fff', fontFamily: 'var(--font)',
-                      fontSize: '15px', fontWeight: 800, cursor: 'pointer',
-                      boxShadow: '0 5px 0 #2d6cc7', letterSpacing: '.04em',
-                    }}
-                  >
-                    Continue →
-                  </button>
-                </div>
-              )
-            }
-
-            const q = PLACEMENT_QS[qi]
-            const progress = ((qi / PLACEMENT_QS.length) * 100)
-
-            return (
-              <div>
-                {/* Game-like header */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <div style={{ fontSize: '12px', fontWeight: 800, color: 'var(--t3)', letterSpacing: '.08em', textTransform: 'uppercase' }}>
-                    Placement · Question {qi + 1} of {PLACEMENT_QS.length}
-                  </div>
-                  <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--blue)' }}>
-                    {qi > 0 ? `${Math.round((answers.filter((a,i)=>a===PLACEMENT_QS[i]?.ans).length / qi)*100)}% correct` : ''}
-                  </div>
-                </div>
-                {/* Animated progress bar */}
-                <div style={{ height: 6, background: 'var(--surface3)', borderRadius: 99, marginBottom: 20, overflow: 'hidden' }}>
-                  <motion.div
-                    animate={{ width: `${progress}%` }}
-                    transition={{ duration: .4, ease: 'easeOut' }}
-                    style={{ height: '100%', background: 'linear-gradient(90deg,var(--blue),var(--purple))', borderRadius: 99 }}
-                  />
-                </div>
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={qi}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                    transition={{ duration: .22 }}
-                  >
-                    <div style={{ fontSize: '16px', fontWeight: 700, marginBottom: 20, lineHeight: 1.55 }}>
-                      {q.q}
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {q.opts.map((opt, i) => (
-                        <button
-                          key={i}
-                          onClick={() => setAnswers(a => [...a, i])}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 12,
-                            background: 'var(--surface2)', border: '2px solid var(--border2)',
-                            borderRadius: 14, padding: '14px 16px', cursor: 'pointer',
-                            fontFamily: 'var(--font)', fontSize: '14px', fontWeight: 700,
-                            color: 'var(--text)', textAlign: 'left', transition: 'all .15s',
-                            boxShadow: '0 3px 0 rgba(0,0,0,.3)',
-                          }}
-                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--blue)'; (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)' }}
-                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border2)'; (e.currentTarget as HTMLElement).style.transform = '' }}
-                        >
-                          <span style={{
-                            width: 28, height: 28, borderRadius: 8, background: 'var(--surface3)',
-                            border: '1.5px solid var(--border2)', display: 'flex', alignItems: 'center',
-                            justifyContent: 'center', fontSize: 12, fontWeight: 800, color: 'var(--t3)',
-                            flexShrink: 0,
-                          }}>{['A','B','C','D'][i]}</span>
-                          {opt}
-                        </button>
-                      ))}
-                    </div>
-                  </motion.div>
-                </AnimatePresence>
-              </div>
-            )
-          })()}
 
           {/* ── Step 3: Daily goal ── */}
           {step === 3 && (
@@ -443,7 +321,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
                   ['Name',         name,                                                              '👤'],
                   ['Goal',         GOALS.find(g => g.value === goal)?.title || goal,                  GOALS.find(g => g.value === goal)?.emoji || '🎯'],
                   ['Daily target', `${xp} XP / day`,                                                  '⚡'],
-                  ['Starting ELO', `${startElo} (${correct}/5 placement)`,                            '📊'],
+                  ['Starting ELO', `${startElo} (${placementScore}/5 placement)`,                            '📊'],
                 ].map(([k, v, icon], idx, arr) => (
                   <div key={String(k)} style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
