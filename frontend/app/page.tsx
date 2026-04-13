@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { api, Learner, StreakState, AdaptiveProfile, AdaptiveNextLesson, C1Status, C2Status, CefrMission, CefrCheckpoint, AiCoachPlan, ReviewQueueItem, Story, StoryDetail, WeakSkillItem, PatternDiagnosis, GeneratedDrillQ, streamLesson } from '../lib/api'
 import { GRAMMAR, GrammarRule, CATEGORIES, CEFR_LEVELS } from '../lib/grammar'
 import { buildCourse, LESSON_TYPE_ICONS, LESSON_TYPE_COLORS } from '../lib/course'
@@ -10,8 +11,18 @@ import StoryPlayer from '../components/StoryPlayer'
 import SkillTree   from '../components/SkillTree'
 import WordHints   from '../components/WordHints'
 import MemoryLog   from '../components/MemoryLog'
+import { AchievementQueue } from '../components/AchievementToast'
 import toast from 'react-hot-toast'
 import confetti from 'canvas-confetti'
+
+// ── Achievement type ──────────────────────────────────────────────────────────
+interface Achievement {
+  id: string
+  title: string
+  description: string
+  icon: string
+  xp: number
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Mode = 'learn'|'chat'|'mathieu'|'voice'|'stories'|'map'|'grammar'|'review'|'memory'|'settings'
@@ -45,8 +56,25 @@ function md(raw: string): string {
 
 // ── XP popup ──────────────────────────────────────────────────────────────────
 function XpPop({xp,onDone}:{xp:number;onDone:()=>void}) {
-  useEffect(()=>{const t=setTimeout(onDone,900);return()=>clearTimeout(t)},[onDone])
-  return <div className="xp-popup">+{xp} XP ⚡</div>
+  useEffect(()=>{const t=setTimeout(onDone,1000);return()=>clearTimeout(t)},[onDone])
+  return (
+    <motion.div
+      initial={{opacity:0, y:0, scale:.7}}
+      animate={{opacity:[0,1,1,0], y:[-4,-28,-40,-52], scale:[.7,1.15,1,.9]}}
+      transition={{duration:1, times:[0,.15,.7,1]}}
+      style={{
+        position:'fixed', top:70, right:28,
+        background:'linear-gradient(135deg,#ffd900,#ff9600)',
+        color:'#000', fontSize:15, fontWeight:900,
+        padding:'7px 16px', borderRadius:99,
+        zIndex:999, pointerEvents:'none',
+        boxShadow:'0 4px 20px rgba(255,217,0,.5)',
+        letterSpacing:'.04em',
+      }}
+    >
+      +{xp} XP ⚡
+    </motion.div>
+  )
 }
 
 // ── Typing dots ───────────────────────────────────────────────────────────────
@@ -157,6 +185,24 @@ export default function App() {
   const [mode,       setMode]      = useState<Mode>('learn')
   const [xpPop,      setXpPop]     = useState<number|null>(null)
   const [hearts,     setHearts]    = useState([true,true,true,true,true])
+  const [feedbackVisible, setFeedbackVisible] = useState(false)
+  const [achievements, setAchievements] = useState<Achievement[]>([])
+  const [welcomeVisible, setWelcomeVisible] = useState(false)
+  const [dailyGoalCelebrated, setDailyGoalCelebrated] = useState(false)
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const shownMilestonesRef = useRef<Set<number>>(new Set())
+  const shownAchievementsRef = useRef<Set<string>>(new Set())
+
+  function addAchievement(a: Achievement) {
+    const key = a.id
+    if (shownAchievementsRef.current.has(key)) return
+    shownAchievementsRef.current.add(key)
+    setAchievements(prev => [...prev, a])
+  }
+
+  function dismissAchievement(id: string) {
+    setAchievements(prev => prev.filter(a => a.id !== id))
+  }
 
   // Drill state
   const [qi,         setQi]        = useState(0)
@@ -283,6 +329,124 @@ export default function App() {
 
   useEffect(()=>{ chatBottomRef.current?.scrollIntoView({behavior:'smooth'}) },[chatMsgs])
   useEffect(()=>{ mBottomRef.current?.scrollIntoView({behavior:'smooth'}) },[mMsgs])
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      // Don't intercept when typing in an input / textarea
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+
+      if (mode === 'learn' && !showTree) {
+        const pool = checkpointSession ? QUESTIONS : getEligibleQuestions()
+        const q = pool[qi % pool.length]
+
+        // Number keys 1-4: select MCQ option
+        if (['1','2','3','4'].includes(e.key) && q.type === 'mcq' && !answered) {
+          const idx = parseInt(e.key) - 1
+          const opts = (q as any).options as string[]
+          if (opts && idx < opts.length) {
+            submitAnswer(opts[idx])
+          }
+          return
+        }
+
+        // Enter: submit arrange or continue
+        if (e.key === 'Enter') {
+          if (answered) {
+            nextQ()
+          } else if (q.type === 'arrange' && arranged.length > 0) {
+            submitAnswer(arranged.join(' '))
+          }
+          return
+        }
+
+        // Escape: go back to skill tree
+        if (e.key === 'Escape') {
+          setShowTree(true)
+          setGeneratedQuestions([])
+          return
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, showTree, answered, qi, arranged, checkpointSession])
+
+  // ── Welcome back message ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (ready && learner) {
+      setWelcomeVisible(true)
+      const t = setTimeout(() => setWelcomeVisible(false), 4000)
+      return () => clearTimeout(t)
+    }
+  }, [ready]) // only on initial ready
+
+  // ── Streak milestone toasts ───────────────────────────────────────────────
+  useEffect(() => {
+    if (!streak) return
+    const s = streak.current_streak
+    const milestones = [3, 7, 14, 30, 60, 100]
+    for (const m of milestones) {
+      if (s === m && !shownMilestonesRef.current.has(m)) {
+        shownMilestonesRef.current.add(m)
+        const msgs: Record<number,string> = {
+          3:  '3-day streak! You\'re building momentum.',
+          7:  '7 days straight! You\'re on fire 🔥',
+          14: '2 weeks! Consistency is your superpower.',
+          30: '30-day streak! Incroyable!',
+          60: '2 months! You\'re a force.',
+          100:'100 days! Legendary dedication 🏆',
+        }
+        toast.success(`🔥 ${msgs[m]}`, { duration: 4000 })
+        addAchievement({
+          id: `streak-${m}`,
+          title: `${m}-Day Streak!`,
+          description: msgs[m],
+          icon: '🔥',
+          xp: m * 5,
+        })
+        break
+      }
+    }
+  }, [streak])
+
+  // ── Daily goal celebration ────────────────────────────────────────────────
+  useEffect(() => {
+    if (!streak || dailyGoalCelebrated) return
+    const xpToday = streak.xp_today || 0
+    const xpGoal  = streak.daily_goal_xp || 50
+    if (xpToday >= xpGoal && xpGoal > 0) {
+      setDailyGoalCelebrated(true)
+      confetti({ particleCount: 80, spread: 60, origin: { y: 0.5 }, colors: ['#58cc02', '#ffd900', '#4f9cf9'] })
+      addAchievement({
+        id: `daily-goal-${new Date().toDateString()}`,
+        title: 'Daily Goal Complete!',
+        description: `You hit your ${xpGoal} XP goal today. Amazing work!`,
+        icon: '🎯',
+        xp: 25,
+      })
+    }
+  }, [streak, dailyGoalCelebrated])
+
+  // ── Lesson milestone achievements ────────────────────────────────────────
+  useEffect(() => {
+    if (!learner) return
+    const totalLessons = learner.xp ? Math.floor(learner.xp / 10) : 0
+    const milestones: Record<number, { title: string; description: string; icon: string; xp: number }> = {
+      10:  { title: '10 Lessons Down!',    description: 'You completed your first 10 lessons. Keep it up!',         icon: '📚', xp: 20  },
+      25:  { title: '25 Lesson Milestone', description: 'A quarter century of lessons — you\'re serious!',           icon: '⭐', xp: 50  },
+      50:  { title: '50 Lessons Strong',   description: 'Half a hundred! Your French is really growing.',            icon: '💪', xp: 75  },
+      100: { title: '100 Lesson Legend',   description: 'One hundred lessons completed. C\'est incroyable!',         icon: '🏆', xp: 150 },
+    }
+    for (const [count, meta] of Object.entries(milestones)) {
+      const n = Number(count)
+      if (totalLessons >= n) {
+        addAchievement({ id: `lessons-${n}`, ...meta })
+      }
+    }
+  }, [learner?.xp])
 
   const grammarWeakPrimed = useRef(false)
   useEffect(() => {
@@ -417,6 +581,7 @@ export default function App() {
     const responseMs = Date.now() - questionStartedAt
     setAnswered(true)
     setCorrect(ok)
+    setFeedbackVisible(true)
     setScore(s=>({c:s.c+(ok?1:0),t:s.t+1}))
     setUnitStats(s => ({ answered: s.answered + 1, correct: s.correct + (ok ? 1 : 0) }))
     if (checkpointSession) {
@@ -752,9 +917,23 @@ export default function App() {
   }}/>
 
   if (!ready) return (
-    <div style={{height:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:16,background:'#0d1117'}}>
-      <div style={{fontFamily:"'Cinzel',serif",fontSize:'1.1rem',letterSpacing:'.3em',color:'#4f9cf9',fontWeight:700}}>VOLTAIRE</div>
-      <div style={{width:28,height:28,border:'3px solid #21262d',borderTop:'3px solid #4f9cf9',borderRadius:'50%',animation:'spin 1s linear infinite'}}/>
+    <div style={{height:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:20,background:'#07090f'}}>
+      <motion.div
+        initial={{opacity:0,y:12}}
+        animate={{opacity:1,y:0}}
+        transition={{duration:.5}}
+        style={{display:'flex',flexDirection:'column',alignItems:'center',gap:16}}
+      >
+        <div style={{fontFamily:"'Cinzel',serif",fontSize:'1.3rem',letterSpacing:'.4em',color:'#4f9cf9',fontWeight:700,textShadow:'0 0 32px rgba(79,156,249,.4)'}}>VOLTAIRE</div>
+        <div style={{fontSize:12,letterSpacing:'.18em',color:'rgba(240,244,255,.35)',textTransform:'uppercase'}}>French Fluency</div>
+        <div style={{width:32,height:32,border:'3px solid rgba(79,156,249,.2)',borderTop:'3px solid #4f9cf9',borderRadius:'50%',animation:'spin 1s linear infinite'}}/>
+        {/* Skeleton preview bars */}
+        <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:8,width:200}}>
+          <div className="skeleton" style={{height:12,width:'100%',borderRadius:6}}/>
+          <div className="skeleton" style={{height:12,width:'75%',borderRadius:6}}/>
+          <div className="skeleton" style={{height:12,width:'88%',borderRadius:6}}/>
+        </div>
+      </motion.div>
     </div>
   )
 
@@ -806,6 +985,7 @@ export default function App() {
   return (
     <div className="app">
       {xpPop!==null && <XpPop xp={xpPop} onDone={()=>setXpPop(null)}/>}
+      <AchievementQueue queue={achievements} onDismiss={dismissAchievement} />
 
       {/* Sidebar */}
       <nav className="sidebar">
@@ -884,8 +1064,26 @@ export default function App() {
           <button className={`mode-tab${mode==='grammar'?' active':''}`} onClick={()=>switchMode('grammar')}>📐</button>
         </div>
 
+        {/* Welcome back banner */}
+        <AnimatePresence>
+          {welcomeVisible && learner && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.35 }}
+              className="welcome-banner"
+            >
+              <span>👋</span>
+              <span>
+                Welcome back, <strong>{learner.name || settingsMap.user_name || 'Learner'}</strong>! Ready to continue your French journey?
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Content */}
-        <div className="content-area">
+        <div className="content-area mode-panel">
 
           {/* ── LEARN ── */}
           {/* ── LEARN — Skill Tree (pick a unit) ── */}
@@ -1076,6 +1274,14 @@ export default function App() {
               </div>
 
               <div className="lesson-body">
+                <AnimatePresence mode="wait">
+                <motion.div
+                  key={qi}
+                  initial={{opacity:0, x:24}}
+                  animate={{opacity:1, x:0}}
+                  exit={{opacity:0, x:-24}}
+                  transition={{duration:.22, ease:[.4,0,.2,1]}}
+                >
                 {checkpointSession && (
                   <div style={{marginBottom:10,padding:'8px 10px',background:'var(--amber-dim)',border:'1px solid rgba(255,217,0,.45)',borderRadius:10,fontSize:12,fontWeight:800,color:'var(--amber)'}}>
                     {checkpointProgress}
@@ -1086,8 +1292,19 @@ export default function App() {
                   <span style={{fontSize:11,fontWeight:700,color:'var(--t3)',background:'var(--surface3)',padding:'3px 10px',borderRadius:99}}>
                     {score.c}/{score.t} correct
                   </span>
-                  {comboStreak>=2&&<span style={{fontSize:11,fontWeight:800,color:'var(--amber)',background:'var(--amber-dim)',padding:'3px 10px',borderRadius:99}}>
-                    🔥 {comboStreak} combo
+                  {comboStreak>=2&&<span
+                    className={comboStreak>=5?'combo-fire':'combo-badge'}
+                    style={{
+                      fontSize: comboStreak>=10?13:11,
+                      fontWeight:800,
+                      color: comboStreak>=10?'#fff':comboStreak>=5?'var(--amber)':'var(--amber)',
+                      background: comboStreak>=10?'linear-gradient(135deg,#ff6b00,#ffd900)':comboStreak>=5?'rgba(255,217,0,.22)':'var(--amber-dim)',
+                      padding: comboStreak>=10?'4px 14px':'3px 10px',
+                      borderRadius:99,
+                      boxShadow: comboStreak>=5?'0 0 12px rgba(255,217,0,.4)':'none',
+                      border: comboStreak>=5?'1px solid rgba(255,217,0,.5)':'none',
+                    }}>
+                    {comboStreak>=10?'🏆':comboStreak>=5?'🔥':'⚡'} {comboStreak}x combo
                   </span>}
                   {mistakes.length>0&&<span style={{fontSize:11,fontWeight:700,color:'var(--red)',background:'var(--red-dim)',padding:'3px 10px',borderRadius:99}}>
                     ⚠️ {mistakes.length} to review
@@ -1235,14 +1452,25 @@ export default function App() {
                   </div>}
                 </>}
 
-                {/* Feedback bar */}
-                {answered&&<div className={`feedback-bar show ${correct?'correct':'wrong'}`}>
-                  <span className="feedback-icon">{correct?'✅':'❌'}</span>
-                  <div>
-                    <div className="feedback-title">{correct?'Correct!':'Incorrect'}</div>
-                    {q.note&&<div className="feedback-body">{q.note}</div>}
-                  </div>
-                </div>}
+                {/* Animated feedback banner */}
+                <AnimatePresence>
+                  {answered && feedbackVisible && (
+                    <motion.div
+                      key={`fb-${qi}`}
+                      initial={{opacity:0, y:16, scale:.97}}
+                      animate={{opacity:1, y:0, scale:1}}
+                      exit={{opacity:0, y:8}}
+                      transition={{duration:.25, ease:[.4,0,.2,1]}}
+                      className={`feedback-bar show ${correct?'correct':'wrong'}`}
+                    >
+                      <span className="feedback-icon">{correct?'✅':'❌'}</span>
+                      <div>
+                        <div className="feedback-title">{correct?'Correct! 🎉':'Not quite...'}</div>
+                        {q.note&&<div className="feedback-body">{q.note}</div>}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 {/* Fast AI correction for arrange mistakes */}
                 {answered && !correct && (
@@ -1267,9 +1495,11 @@ export default function App() {
                 )}
 
                 {/* Continue */}
-                {answered&&<button className={`check-btn ${correct?'continue':'wrong-continue'}`} onClick={nextQ} style={{marginTop:8}}>
+                {answered&&<button className={`check-btn ${correct?'continue':'wrong-continue'}`} onClick={()=>{setFeedbackVisible(false);nextQ()}} style={{marginTop:8}}>
                   Continue
                 </button>}
+                </motion.div>
+                </AnimatePresence>
               </div>
             </div>
           )}
@@ -1466,7 +1696,23 @@ export default function App() {
                       </div>
                     ))}
                     {stories.length === 0 && (
-                      <div style={{padding:24,color:'var(--t3)',fontSize:14}}>Loading stories… If this stays empty, check the backend.</div>
+                      <motion.div
+                        initial={{opacity:0,y:10}}
+                        animate={{opacity:1,y:0}}
+                        style={{
+                          gridColumn:'1/-1',padding:'40px 20px',textAlign:'center',
+                          display:'flex',flexDirection:'column',alignItems:'center',gap:12,
+                        }}
+                      >
+                        <div style={{fontSize:'3rem'}}>📚</div>
+                        <div style={{fontSize:16,fontWeight:800,color:'var(--text)'}}>No stories yet</div>
+                        <div style={{fontSize:13,color:'var(--t3)',lineHeight:1.65,maxWidth:280}}>
+                          Stories load from your backend. Make sure the server is running and you've completed some lessons to unlock them.
+                        </div>
+                        <button className="ph-btn" onClick={()=>void refreshStoriesList()} style={{marginTop:4}}>
+                          Refresh Stories
+                        </button>
+                      </motion.div>
                     )}
                   </div>
                 </>
@@ -1558,63 +1804,182 @@ export default function App() {
           {/* ── SETTINGS ── */}
           {mode==='settings' && (
             <div style={{height:'100%',overflowY:'auto',padding:'20px'}}>
-              <div style={{fontSize:'1.2rem',fontWeight:800,marginBottom:4}}>⚙️ Settings</div>
-              <div style={{fontSize:13,color:'var(--t3)',marginBottom:14}}>
-                Persisted locally and used by your adaptive tutor.
+              <div style={{fontSize:'1.2rem',fontWeight:800,marginBottom:2}}>⚙️ Settings</div>
+              <div style={{fontSize:13,color:'var(--t3)',marginBottom:20}}>
+                Your profile, stats, and tutor preferences.
               </div>
+
+              {/* ── Stats overview grid ── */}
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:12,marginBottom:24,maxWidth:560}}>
+                <div className="stat-card">
+                  <div className="stat-card-label">ELO Rating</div>
+                  <div className="stat-card-value" style={{color:'var(--blue-b)'}}>{elo}</div>
+                  <div className="stat-card-sub">Language level</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-card-label">CEFR Level</div>
+                  <div className="stat-card-value" style={{color:'var(--green-b)'}}>
+                    {(['C2','C1','B2','B1','A2','A1'] as const).find(l => elo >= CEFR_ELO[l].min) || 'A1'}
+                  </div>
+                  <div className="stat-card-sub">Current standing</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-card-label">Total XP</div>
+                  <div className="stat-card-value" style={{color:'var(--amber)'}}>{learner?.xp || 0}</div>
+                  <div className="stat-card-sub">Points earned</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-card-label">Streak</div>
+                  <div className="stat-card-value" style={{color:'var(--amber)'}}>
+                    {curStreak > 0 ? `${curStreak}🔥` : `0`}
+                  </div>
+                  <div className="stat-card-sub">Days in a row</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-card-label">Lessons Done</div>
+                  <div className="stat-card-value">{learner?.xp ? Math.floor(learner.xp / 10) : 0}</div>
+                  <div className="stat-card-sub">Est. completed</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-card-label">Today XP</div>
+                  <div className="stat-card-value" style={{color:'var(--green-b)'}}>{xpToday}</div>
+                  <div className="stat-card-sub">of {xpGoal} goal</div>
+                </div>
+              </div>
+
+              {/* ── CEFR progress bar ── */}
+              {c1Status && (
+                <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:14,padding:'14px 16px',marginBottom:16,maxWidth:560}}>
+                  <div style={{fontSize:12,fontWeight:800,color:'var(--blue-b)',marginBottom:8}}>Path to C1 — {c1Status.pct_to_c1}%</div>
+                  <div style={{height:8,background:'var(--surface3)',borderRadius:99,overflow:'hidden',marginBottom:8}}>
+                    <motion.div
+                      initial={{width:0}}
+                      animate={{width:`${c1Status.pct_to_c1}%`}}
+                      transition={{duration:.8,ease:[.4,0,.2,1]}}
+                      style={{height:'100%',background:'linear-gradient(90deg,var(--blue),var(--purple))',borderRadius:99}}
+                    />
+                  </div>
+                  <div style={{fontSize:12,color:'var(--t2)'}}>{c1Status.recommendation}</div>
+                </div>
+              )}
+
               <div style={{display:'grid',gap:14,maxWidth:560}}>
-                <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12,padding:12}}>
-                  <div style={{fontSize:12,color:'var(--t3)',marginBottom:6}}>Display name</div>
-                  <input className="chat-input" value={settingsMap.user_name || learner?.name || ''} onChange={e=>setSettingsMap(p=>({...p,user_name:e.target.value}))} />
+                {/* Display name */}
+                <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12,padding:14}}>
+                  <div style={{fontSize:12,fontWeight:700,color:'var(--t3)',marginBottom:8}}>Display name</div>
+                  <input className="chat-input" value={settingsMap.user_name || learner?.name || ''} onChange={e=>setSettingsMap(p=>({...p,user_name:e.target.value}))} placeholder="Your name" />
                   <button className="check-btn ready" style={{marginTop:8,padding:'10px 12px'}} disabled={savingSettings} onClick={()=>saveSetting('user_name', settingsMap.user_name || learner?.name || 'Learner')}>
                     Save Name
                   </button>
                 </div>
-                <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12,padding:12}}>
-                  <div style={{fontSize:12,color:'var(--t3)',marginBottom:6}}>Daily XP goal</div>
-                  <input className="chat-input" value={settingsMap.daily_goal_xp || String(streak?.daily_goal_xp || 50)} onChange={e=>setSettingsMap(p=>({...p,daily_goal_xp:e.target.value.replace(/[^0-9]/g,'')}))} />
+
+                {/* Daily XP goal */}
+                <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12,padding:14}}>
+                  <div style={{fontSize:12,fontWeight:700,color:'var(--t3)',marginBottom:8}}>Daily XP goal</div>
+                  <input className="chat-input" type="number" value={settingsMap.daily_goal_xp || String(streak?.daily_goal_xp || 50)} onChange={e=>setSettingsMap(p=>({...p,daily_goal_xp:e.target.value.replace(/[^0-9]/g,'')}))} placeholder="50" />
                   <button className="check-btn ready" style={{marginTop:8,padding:'10px 12px'}} disabled={savingSettings} onClick={()=>saveSetting('daily_goal_xp', settingsMap.daily_goal_xp || '50')}>
                     Save Goal
                   </button>
                 </div>
-                <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12,padding:12}}>
-                  <div style={{fontSize:12,color:'var(--t3)',marginBottom:6}}>C1 target status</div>
-                  <div style={{fontSize:13,fontWeight:700}}>
-                    {c1Status ? `${c1Status.elo}/${c1Status.target_elo} ELO (${c1Status.pct_to_c1}%)` : 'Loading...'}
+
+                {/* C2 status */}
+                <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12,padding:14}}>
+                  <div style={{fontSize:12,fontWeight:700,color:'var(--t3)',marginBottom:4}}>C2 mastery progress</div>
+                  <div style={{fontSize:14,fontWeight:800,marginBottom:4}}>
+                    {c2Status ? `${c2Status.elo} / ${c2Status.target_elo} ELO (${c2Status.pct_to_c2}%)` : 'Loading...'}
                   </div>
-                  <div style={{fontSize:12,color:'var(--t2)',marginTop:4}}>
-                    {c1Status?.recommendation || 'Keep practicing daily.'}
+                  <div style={{height:6,background:'var(--surface3)',borderRadius:99,overflow:'hidden',marginBottom:8}}>
+                    {c2Status && (
+                      <div style={{height:'100%',width:`${c2Status.pct_to_c2}%`,background:'linear-gradient(90deg,var(--amber),#ff9600)',borderRadius:99}}/>
+                    )}
+                  </div>
+                  <div style={{fontSize:12,color:'var(--t2)'}}>{c2Status?.recommendation || 'Build consistency and long streaks.'}</div>
+                </div>
+
+                {/* Difficulty + Strictness + Audio speed in one row */}
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                  <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12,padding:14}}>
+                    <div style={{fontSize:12,fontWeight:700,color:'var(--t3)',marginBottom:8}}>Difficulty (0-100)</div>
+                    <input className="chat-input" value={settingsMap.difficulty_bias || '50'} onChange={e=>setSettingsMap(p=>({...p,difficulty_bias:e.target.value.replace(/[^0-9]/g,'')}))} style={{marginBottom:8}} />
+                    <button className="check-btn ready" style={{padding:'9px 10px',fontSize:13}} disabled={savingSettings} onClick={()=>saveSetting('difficulty_bias', settingsMap.difficulty_bias || '50')}>
+                      Save
+                    </button>
+                  </div>
+                  <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12,padding:14}}>
+                    <div style={{fontSize:12,fontWeight:700,color:'var(--t3)',marginBottom:8}}>Audio speed</div>
+                    <input className="chat-input" value={settingsMap.audio_speed || '0.85'} onChange={e=>setSettingsMap(p=>({...p,audio_speed:e.target.value.replace(/[^0-9.]/g,'')}))} style={{marginBottom:8}} />
+                    <button className="check-btn ready" style={{padding:'9px 10px',fontSize:13}} disabled={savingSettings} onClick={()=>saveSetting('audio_speed', settingsMap.audio_speed || '0.85')}>
+                      Save
+                    </button>
                   </div>
                 </div>
-                <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12,padding:12}}>
-                  <div style={{fontSize:12,color:'var(--t3)',marginBottom:6}}>C2 target status</div>
-                  <div style={{fontSize:13,fontWeight:700}}>
-                    {c2Status ? `${c2Status.elo}/${c2Status.target_elo} ELO (${c2Status.pct_to_c2}%)` : 'Loading...'}
-                  </div>
-                  <div style={{fontSize:12,color:'var(--t2)',marginTop:4}}>
-                    {c2Status?.recommendation || 'Build consistency and long streaks.'}
-                  </div>
-                </div>
-                <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12,padding:12}}>
-                  <div style={{fontSize:12,color:'var(--t3)',marginBottom:6}}>Difficulty bias (0-100)</div>
-                  <input className="chat-input" value={settingsMap.difficulty_bias || '50'} onChange={e=>setSettingsMap(p=>({...p,difficulty_bias:e.target.value.replace(/[^0-9]/g,'')}))} />
-                  <button className="check-btn ready" style={{marginTop:8,padding:'10px 12px'}} disabled={savingSettings} onClick={()=>saveSetting('difficulty_bias', settingsMap.difficulty_bias || '50')}>
-                    Save Difficulty
-                  </button>
-                </div>
-                <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12,padding:12}}>
-                  <div style={{fontSize:12,color:'var(--t3)',marginBottom:6}}>Correction strictness (low/medium/high)</div>
-                  <input className="chat-input" value={settingsMap.correction_strictness || 'medium'} onChange={e=>setSettingsMap(p=>({...p,correction_strictness:e.target.value}))} />
-                  <button className="check-btn ready" style={{marginTop:8,padding:'10px 12px'}} disabled={savingSettings} onClick={()=>saveSetting('correction_strictness', settingsMap.correction_strictness || 'medium')}>
+
+                <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12,padding:14}}>
+                  <div style={{fontSize:12,fontWeight:700,color:'var(--t3)',marginBottom:8}}>Correction strictness</div>
+                  <select
+                    className="chat-input"
+                    value={settingsMap.correction_strictness || 'medium'}
+                    onChange={e=>setSettingsMap(p=>({...p,correction_strictness:e.target.value}))}
+                    style={{marginBottom:8,cursor:'pointer'}}
+                  >
+                    <option value="low">Low — Lenient grading</option>
+                    <option value="medium">Medium — Balanced (recommended)</option>
+                    <option value="high">High — Strict grading</option>
+                  </select>
+                  <button className="check-btn ready" style={{padding:'10px 12px'}} disabled={savingSettings} onClick={()=>saveSetting('correction_strictness', settingsMap.correction_strictness || 'medium')}>
                     Save Strictness
                   </button>
                 </div>
-                <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12,padding:12}}>
-                  <div style={{fontSize:12,color:'var(--t3)',marginBottom:6}}>Audio speed (0.6-1.2)</div>
-                  <input className="chat-input" value={settingsMap.audio_speed || '0.85'} onChange={e=>setSettingsMap(p=>({...p,audio_speed:e.target.value.replace(/[^0-9.]/g,'')}))} />
-                  <button className="check-btn ready" style={{marginTop:8,padding:'10px 12px'}} disabled={savingSettings} onClick={()=>saveSetting('audio_speed', settingsMap.audio_speed || '0.85')}>
-                    Save Audio Speed
-                  </button>
+
+                {/* ── Danger zone: reset progress ── */}
+                <div style={{background:'rgba(255,75,75,.06)',border:'1.5px solid rgba(255,75,75,.25)',borderRadius:14,padding:16}}>
+                  <div style={{fontSize:13,fontWeight:900,color:'var(--red)',marginBottom:4}}>⚠️ Danger Zone</div>
+                  <div style={{fontSize:13,color:'var(--t2)',marginBottom:14,lineHeight:1.55}}>
+                    Reset all progress — XP, streak, and ELO will be wiped. This cannot be undone.
+                  </div>
+                  {!showResetConfirm ? (
+                    <button
+                      onClick={()=>setShowResetConfirm(true)}
+                      style={{
+                        background:'transparent',border:'2px solid var(--red)',borderRadius:10,
+                        color:'var(--red)',fontFamily:'var(--font)',fontSize:13,fontWeight:800,
+                        padding:'10px 20px',cursor:'pointer',transition:'all .15s',
+                      }}
+                      onMouseEnter={e=>{(e.target as HTMLButtonElement).style.background='var(--red)';(e.target as HTMLButtonElement).style.color='#fff'}}
+                      onMouseLeave={e=>{(e.target as HTMLButtonElement).style.background='transparent';(e.target as HTMLButtonElement).style.color='var(--red)'}}
+                    >
+                      Reset All Progress
+                    </button>
+                  ) : (
+                    <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                      <div style={{fontSize:13,fontWeight:800,color:'var(--red)'}}>
+                        Are you absolutely sure? This is irreversible.
+                      </div>
+                      <div style={{display:'flex',gap:10}}>
+                        <button
+                          onClick={async()=>{
+                            try {
+                              await api.saveSetting('_reset_progress','1')
+                              toast.success('Progress reset. Reload the page.')
+                              setShowResetConfirm(false)
+                            } catch {
+                              toast.error('Could not reset — check backend.')
+                              setShowResetConfirm(false)
+                            }
+                          }}
+                          style={{flex:1,background:'var(--red)',border:'none',borderRadius:10,color:'#fff',fontFamily:'var(--font)',fontSize:13,fontWeight:800,padding:'10px 16px',cursor:'pointer'}}
+                        >
+                          Yes, Reset Everything
+                        </button>
+                        <button
+                          onClick={()=>setShowResetConfirm(false)}
+                          style={{flex:1,background:'var(--surface3)',border:'1px solid var(--border2)',borderRadius:10,color:'var(--t2)',fontFamily:'var(--font)',fontSize:13,fontWeight:700,padding:'10px 16px',cursor:'pointer'}}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
