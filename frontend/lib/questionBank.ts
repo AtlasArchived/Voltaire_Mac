@@ -1,4 +1,6 @@
-export type QType = 'mcq'|'arrange'|'listen'|'translate'
+import { LESSON_PLANS, type LessonPhrase } from './lessonPlans'
+
+export type QType = 'mcq'|'arrange'|'listen'|'translate'|'fill_blank'|'error_correct'
 export type CefrLevel = 'A1'|'A2'|'B1'|'B2'|'C1'|'C2'
 
 export interface BaseQ {
@@ -11,11 +13,13 @@ export interface BaseQ {
   note?: string
 }
 
-export interface McqQ extends BaseQ { type: 'mcq'; options: string[] }
-export interface ArrQ extends BaseQ { type: 'arrange'; words: string[] }
-export interface ListQ extends BaseQ { type: 'listen'; audioText: string }
-export interface TransQ extends BaseQ { type: 'translate'; direction: 'fr-en'|'en-fr' }
-export type DrillQ = McqQ | ArrQ | ListQ | TransQ
+export interface McqQ    extends BaseQ { type: 'mcq';           options: string[] }
+export interface ArrQ    extends BaseQ { type: 'arrange';       words: string[] }
+export interface ListQ   extends BaseQ { type: 'listen';        audioText: string }
+export interface TransQ  extends BaseQ { type: 'translate';     direction: 'fr-en'|'en-fr' }
+export interface FillQ   extends BaseQ { type: 'fill_blank' }
+export interface ErrQ    extends BaseQ { type: 'error_correct' }
+export type DrillQ = McqQ | ArrQ | ListQ | TransQ | FillQ | ErrQ
 
 export const CEFR_ELO: Record<CefrLevel, { min: number; max: number }> = {
   A1: { min: 0, max: 999 },
@@ -261,12 +265,16 @@ function chunks<T>(arr: T[], size: number): T[][] {
 }
 
 export const UNIT_META: UnitMeta[] = (Object.keys(PHRASES) as CefrLevel[]).flatMap((level) => {
-  return chunks(PHRASES[level], 3).map((_c, idx) => ({
-    id: `${level.toLowerCase()}-u${idx + 1}`,
-    cefr: level,
-    title: `${level} Unit ${idx + 1}`,
-    lessonTypes: ['vocab_intro', 'guided_dialog', 'grammar_focus', 'controlled_practice', 'fluency_drill', 'unit_review'],
-  }))
+  return chunks(PHRASES[level], 3).map((_c, idx) => {
+    const unitId = `${level.toLowerCase()}-u${idx + 1}`
+    const plan   = LESSON_PLANS[unitId]
+    return {
+      id: unitId,
+      cefr: level,
+      title: plan ? plan.title : `${level} Unit ${idx + 1}`,
+      lessonTypes: ['vocab_intro', 'guided_dialog', 'grammar_focus', 'controlled_practice', 'fluency_drill', 'unit_review'],
+    }
+  })
 })
 
 const GENERATED: DrillQ[] = (Object.keys(PHRASES) as CefrLevel[]).flatMap((level) => {
@@ -330,3 +338,39 @@ const GENERATED: DrillQ[] = (Object.keys(PHRASES) as CefrLevel[]).flatMap((level
 })
 
 export const QUESTION_BANK: DrillQ[] = GENERATED
+export { PHRASES }
+
+/** Returns the source phrases for a unit (for the intro card) */
+export function getUnitPhrases(unitId: string): LessonPhrase[] {
+  const plan = LESSON_PLANS[unitId]
+  if (plan) return plan.phrases
+
+  const frEn = GENERATED.filter(
+    q => q.unitId === unitId && q.type === 'translate' && (q as TransQ).direction === 'fr-en'
+  ) as TransQ[]
+  return frEn.map(q => ({
+    fr: q.prompt.replace(/^Translate: "/, '').replace(/"$/, ''),
+    en: q.answer,
+    note: q.note || '',
+  }))
+}
+
+/** Split a unit's questions into practice and test sets */
+export function getUnitLessonQuestions(unitId: string): { practice: DrillQ[]; test: DrillQ[] } {
+  const plan = LESSON_PLANS[unitId]
+  if (plan) {
+    return {
+      practice: plan.practice.slice(0, 15) as DrillQ[],
+      test:     plan.test               as DrillQ[],
+    }
+  }
+
+  const all = GENERATED.filter(q => q.unitId === unitId)
+  const seed = unitId.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+  const shuffled = [...all].sort((a, b) => {
+    const ha = (seed * 31 + a.type.charCodeAt(0)) % all.length
+    const hb = (seed * 31 + b.type.charCodeAt(0)) % all.length
+    return ha - hb
+  })
+  return { practice: shuffled.slice(0, 5), test: shuffled.slice(5, 10) }
+}
