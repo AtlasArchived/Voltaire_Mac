@@ -226,11 +226,55 @@ const a1u4Phrases: LessonPhrase[] = [
 ]
 
 // ─────────────────────────────────────────────────────────────────────────────
+// A1 Unit 5 — "What Are You Wearing?"
+// ─────────────────────────────────────────────────────────────────────────────
+const Y = 'a1-u5'
+const a1u5Practice: LPQ[] = [
+  t(Y, 'fr-en', 'Une robe rouge',                                      'A red dress',                       "'Rouge' is identical for masculine and feminine — it already ends in e."),
+  m(Y, 'A yellow hat',                                                  'Un chapeau jaune',                  ['Un jaune chapeau','Un chapeau jaune','Une chapeau jaune','Un chapeau jaunne'], "Colors almost always sit AFTER the noun in French — the opposite of English."),
+  t(Y, 'fr-en', 'Translate: "rouge, jaune, rose, noir"',               'red, yellow, pink, black',          "'Noir' is the root of 'film noir' — and the Parisian wardrobe staple."),
+  f(Y, 'Une veste ___ (pink).',                                         'rose',                              "Many flower names — rose, violette — are used for both colors and girls' names in France."),
+  l(Y, 'Un pull noir.',                                                 'Black',                             "In French fashion, 'le noir' is considered the most versatile and elegant color."),
+  t(Y, 'en-fr', 'A green skirt',                                       'Une jupe verte',                    "Jupe is feminine → 'vert' becomes 'verte'. The silent t is now audible!"),
+  a(Y, "Build: 'The shirt is white'",                                   'La chemise est blanche',            ['La','chemise','est','blanche'], "'Blanc' has an irregular feminine: 'blanche'. Think of blanching vegetables — turning them white."),
+  e(Y, 'Une bleue veste',                                               'Une veste bleue',                   "Color placement: always Noun → Color, never Color → Noun."),
+  m(Y, 'Complete: Des chaussures ___ (grey).',                          'grises',                            ['gris','grise','grises','grisey'], "'Chaussures' is feminine plural → 'grises'. Both the gender and plural e/s are added."),
+  f(Y, 'Ma robe est ___ (purple).',                                     'violette',                          "Violet (m) → violette (f). The double t is the feminine marker here."),
+  t(Y, 'en-fr', 'I wear orange socks.',                                'Je porte des chaussettes orange',   "Invariable alert: 'orange' is a fruit name — it never takes an s or e, even with plural feminine nouns."),
+  l(Y, 'Mon manteau est marron.',                                       'Brown',                             "'Marron' = chestnut. Like 'orange', it is invariable — never changes form."),
+  a(Y, "Build: 'She has a blue dress'",                                 'Elle a une robe bleue',             ['Elle','a','une','robe','bleue'], "Agreement: robe (f) → bleue (f). The final e is silent but essential in writing."),
+  t(Y, 'fr-en', 'Translate: "manteau, chaussettes, pantalon, pull"',  'coat, socks, pants, sweater',       "'Pull' is from English 'pullover' — French fashion borrowed it wholesale."),
+  e(Y, 'Je porte des jupes oranges.',                                   'Je porte des jupes orange',         "Common mistake: fruit/noun colors are invariable. 'Oranges' is never correct as a color."),
+]
+
+const a1u5Test: LPQ[] = [
+  t(Y, 'en-fr', 'The green dress',                                     'La robe verte',                     "Both color placement (after noun) and gender agreement (robe = f → verte) are tested here."),
+  t(Y, 'fr-en', "J'ai des chaussures noires.",                         'I have black shoes',                "The s on 'noires' matches plural 'chaussures'. Both feminine and plural endings stack: noir → noire → noires."),
+  m(Y, 'Complete: Une chemise ___',                                     'blanche',                           ['blanc','blanche','blanch','blanches'], "'Chemise' is feminine singular → 'blanche'. The irregular form replaces the final c with che."),
+  m(Y, 'Complete: Un pantalon ___',                                     'gris',                              ['gris','grise','grises','grisey'], "'Pantalon' is masculine. 'Gris' already ends in s — it doesn't change for plural either."),
+  a(Y, "Build: 'She wears a red jacket'",                              'Elle porte une veste rouge',         ['Elle','porte','une','veste','rouge'], "'Porter' (to wear/carry) uses the same form as porte in architecture — something that carries."),
+  f(Y, 'Ma robe est ___ (purple).',                                    'violette',                           "Irregular feminine: -et → -ette. Violet is also a girl's name in France."),
+  e(Y, 'Un blanc chapeau',                                             'Un chapeau blanc',                   "Noun first, color second — always. This is the most common error for English speakers."),
+  e(Y, 'Elle a des jupes oranges.',                                    'Elle a des jupes orange',            "'Orange' stays 'orange' forever — no agreement, no plural s, no exceptions."),
+  l(Y, 'Le manteau est vert.',                                         'Green',                              "The t in 'vert' (masculine) is silent. Add 'e' → 'verte' (feminine) and the t is suddenly heard."),
+  t(Y, 'fr-en', 'Translate: "verte, blanche, noire, bleue"',          'green, white, black, blue',          "All four are feminine forms. The agreement endings are the hallmark of a precise French speaker."),
+]
+
+const a1u5Phrases: LessonPhrase[] = [
+  { fr: 'Une robe rouge',         en: 'A red dress',           note: "Colors come AFTER the noun — the direct opposite of English word order." },
+  { fr: 'Une jupe verte',         en: 'A green skirt',         note: "'Vert' (m) → 'verte' (f). The silent t finally becomes audible in the feminine form." },
+  { fr: 'Une chemise blanche',    en: 'A white shirt',         note: "'Blanc' → 'blanche' — one of the most irregular color agreements. Think: blanching." },
+  { fr: 'Des chaussures orange',  en: 'Orange shoes',          note: "Fruit and nut colors (orange, marron) are INVARIABLE — they never take gender or plural endings." },
+  { fr: 'Un pantalon gris',       en: 'Grey pants',            note: "'Gris' already ends in s — the masculine singular and masculine plural are identical." },
+]
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Export
 // ─────────────────────────────────────────────────────────────────────────────
 export const LESSON_PLANS: Record<string, LessonPlanData> = {
-  'a1-u1': { title: 'The First Encounter',  theme: 'Greetings & Introductions',                  phrases: a1u1Phrases, practice: a1u1Practice, test: a1u1Test },
-  'a1-u2': { title: 'The Rhythm of Life',   theme: 'Numbers, Dates & Time',                      phrases: a1u2Phrases, practice: a1u2Practice, test: a1u2Test },
-  'a1-u3': { title: 'All in the Family',    theme: 'Family members, possessives & relationships', phrases: a1u3Phrases, practice: a1u3Practice, test: a1u3Test },
-  'a1-u4': { title: 'Café Culture',         theme: 'Ordering food & drink, polite requests',     phrases: a1u4Phrases, practice: a1u4Practice, test: a1u4Test },
+  'a1-u1': { title: 'The First Encounter',     theme: 'Greetings & Introductions',                  phrases: a1u1Phrases, practice: a1u1Practice, test: a1u1Test },
+  'a1-u2': { title: 'The Rhythm of Life',      theme: 'Numbers, Dates & Time',                      phrases: a1u2Phrases, practice: a1u2Practice, test: a1u2Test },
+  'a1-u3': { title: 'All in the Family',       theme: 'Family members, possessives & relationships', phrases: a1u3Phrases, practice: a1u3Practice, test: a1u3Test },
+  'a1-u4': { title: 'Café Culture',            theme: 'Ordering food & drink, polite requests',     phrases: a1u4Phrases, practice: a1u4Practice, test: a1u4Test },
+  'a1-u5': { title: 'What Are You Wearing?',   theme: 'Colors, clothing & adjective agreement',     phrases: a1u5Phrases, practice: a1u5Practice, test: a1u5Test },
 }
