@@ -355,6 +355,49 @@ const a1u7Phrases: LessonPhrase[] = [
 ]
 
 // ─────────────────────────────────────────────────────────────────────────────
+// A1 Unit 8 — "The French Sky"
+// ─────────────────────────────────────────────────────────────────────────────
+const A8 = 'a1-u8'
+const a1u8Practice: LPQ[] = [
+  t(A8, 'fr-en', 'Il fait froid.',                                      'It is cold',                            "'Faire' (to make/do) carries all basic weather sensations. The impersonal 'il' is not 'he' — it's the world."),
+  t(A8, 'en-fr', 'It is beautiful in summer.',                         'Il fait beau en été',                   "'En' before été because it starts with a vowel. 'Au' is reserved for le printemps only."),
+  t(A8, 'fr-en', 'Il y a du vent en automne.',                         'It is windy in autumn',                 "'Il y a' = there is/are. You are literally saying 'There is some wind' — wind is a thing, not a quality."),
+  m(A8, "How do you ask 'What is the weather like?'",                   'Quel temps fait-il ?',                  ['Comment est le ciel ?','Quel temps fait-il ?','Il fait quel temps ?','Est-ce qu'il est beau ?'], "'Temps' means both weather AND time — to the French, the shifting sky and the passing hours are one concept."),
+  m(A8, "Which season uses the preposition 'au'?",                      'le printemps',                          ["l'été","l'automne","l'hiver",'le printemps'], "Printemps starts with a consonant and is masculine → 'au'. Été, automne, hiver all start with vowels → 'en'."),
+  a(A8, "Build: 'It is sunny'",                                         'Il fait du soleil',                     ['Il','fait','du','soleil'], "'Du soleil' uses the partitive article — some sunshine. Soleil is masculine."),
+  a(A8, "Build: 'In winter it snows'",                                  'En hiver il neige',                     ['En','hiver','il','neige'], "'Neige' shares its root with 'niveous' (snow-white). 'Il neige' exists only in the 'il' form."),
+  f(A8, "Il ___ mauvais aujourd'hui.",                                  'fait',                                  "Use 'fait' for weather qualities — good (beau) and bad (mauvais). These describe the state of the sky."),
+  f(A8, '___ printemps, il y a des fleurs.',                            'Au',                                    "Spring is the only season needing 'au'. The others all start with vowels and pair with 'en'."),
+  e(A8, "C'est chaud en été.",                                          'Il fait chaud en été',                  "Never use 'C'est' for weather. 'C'est chaud' means a physical object is hot, like a coffee cup."),
+  e(A8, 'En printemps, il pleut.',                                      'Au printemps, il pleut',                "The most common season error. Printemps is masculine, starts with a consonant → always 'au printemps'."),
+  l(A8, 'Il pleut beaucoup en automne.',                                'A lot',                                 "'Beaucoup' = a lot. Literally 'a fine stroke' (beau + coup). Think of a heavy downpour striking the ground."),
+  l(A8, 'Il y a du brouillard ce matin.',                              'Fog',                                   "'Brouillard' shares its root with 'embroil' — things get tangled and mixed up in the mist."),
+  t(A8, 'fr-en', 'Translate: "hiver, neige, été, chaud"',              'winter, snow, summer, hot',             "French weather is a national obsession — and a prime subject for 'râler' (complaining)."),
+  t(A8, 'fr-en', 'Translate: "Il fait, Il y a, Il pleut, Au printemps"', 'It makes (quality), There is, It rains, In spring', "Three different constructions for weather. Knowing which one fits which word is what separates learners from speakers."),
+]
+
+const a1u8Test: LPQ[] = [
+  t(A8, 'en-fr', 'It is cold in winter.',                              'Il fait froid en hiver',                "Combines 'il fait' + weather quality + 'en' + vowel-starting season."),
+  t(A8, 'fr-en', "Il y a des nuages aujourd'hui.",                     'It is cloudy today',                    "'Aujourd'hui' literally means 'on the day of today' — a famously redundant phrase even in French."),
+  m(A8, 'Which expression describes a storm?',                          "Il y a de l'orage",                    ['Il fait du vent','Il fait mauvais',"Il y a de l'orage",'Il neige'], "'Orage' is related to 'aurora' — think of the charged light before and after a storm."),
+  m(A8, "Select the correct preposition: '___ automne, il fait du vent.'", 'En',                               ['Au','En','À la','Dans'], "Automne starts with a vowel → 'en'. Only printemps (consonant, masculine) gets 'au'."),
+  a(A8, "Build: 'In spring the weather is nice'",                       'Au printemps il fait beau',             ['Au','printemps','il','fait','beau'], "The classic French spring sentence. Gets the au + il fait combination in one go."),
+  f(A8, 'Il fait ___ soleil aujourd\'hui.',                             'du',                                    "Soleil is masculine → 'du' (de + le). Partitive article for a substance-like noun."),
+  e(A8, 'Il fait nuages.',                                              'Il y a des nuages',                    "You cannot 'make' clouds. Clouds simply exist — use 'il y a'. Reserve 'il fait' for qualities like beau/mauvais."),
+  e(A8, 'Il y a chaud au printemps.',                                   'Il fait chaud au printemps',            "Heat is a weather quality → 'il fait'. 'Il y a' is for things: wind, clouds, fog, storms."),
+  l(A8, 'La canicule est en été.',                                     'In summer',                             "Canicule = from Canicula (Little Dog Star), which rises with the sun during the hottest days."),
+  t(A8, 'fr-en', 'Translate: "chaud / froid, beau / mauvais, soleil / nuages, été / hiver"', 'hot / cold, nice / bad, sun / clouds, summer / winter', "Opposite pairs are the fastest way to build a mental map of weather vocabulary."),
+]
+
+const a1u8Phrases: LessonPhrase[] = [
+  { fr: 'Il fait beau',           en: 'The weather is nice',      note: "The 'il' is impersonal — not 'he', but the state of the world. French weather literally 'makes' beauty." },
+  { fr: 'Quel temps fait-il ?',   en: 'What is the weather like?', note: "'Temps' means BOTH weather and time. To the French, the shifting sky and passing hours share the same word." },
+  { fr: 'Il pleut',               en: 'It is raining',            note: "From Latin 'pluere'. Exists ONLY in the 'il' form — you cannot say 'I rain' or 'you rain'." },
+  { fr: 'Au printemps',           en: 'In spring',                note: "The only season using 'au'. Été, automne, hiver all start with vowels and use 'en' instead." },
+  { fr: 'La canicule',            en: 'The heatwave',             note: "From Latin Canicula (Little Dog Star). A major national conversation in France since the devastating summer of 2003." },
+]
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Export
 // ─────────────────────────────────────────────────────────────────────────────
 export const LESSON_PLANS: Record<string, LessonPlanData> = {
@@ -365,4 +408,5 @@ export const LESSON_PLANS: Record<string, LessonPlanData> = {
   'a1-u5': { title: 'What Are You Wearing?',   theme: 'Colors, clothing & adjective agreement',     phrases: a1u5Phrases, practice: a1u5Practice, test: a1u5Test },
   'a1-u6': { title: 'Getting Around',          theme: 'Directions, city places & prepositions',     phrases: a1u6Phrases, practice: a1u6Practice, test: a1u6Test },
   'a1-u7': { title: 'From Dawn to Dusk',       theme: 'Daily routines, reflexive verbs & time of day', phrases: a1u7Phrases, practice: a1u7Practice, test: a1u7Test },
+  'a1-u8': { title: 'The French Sky',          theme: 'Weather expressions, seasons & the impersonal il', phrases: a1u8Phrases, practice: a1u8Practice, test: a1u8Test },
 }
