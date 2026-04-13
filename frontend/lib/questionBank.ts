@@ -264,6 +264,75 @@ function chunks<T>(arr: T[], size: number): T[][] {
   return out
 }
 
+const UNIT_TITLES: Record<string, string> = {
+  // A1 — Beginner
+  'a1-u1':  'The First Encounter',    // Greetings & introductions — from plan
+  'a1-u2':  'The Rhythm of Life',     // Numbers, dates & time — from plan
+  'a1-u3':  'All in the Family',      // Family & people
+  'a1-u4':  'Café Culture',           // Food & drink
+  'a1-u5':  'What Are You Wearing?',  // Colors & clothing
+  'a1-u6':  'Getting Around',         // Places & directions
+  'a1-u7':  'From Dawn to Dusk',      // Daily routines
+  'a1-u8':  'The French Sky',         // Weather & seasons
+  'a1-u9':  'At the Market',          // Shopping & money
+  'a1-u10': 'À bientôt!',             // Travel & farewells
+  // A2 — Elementary
+  'a2-u1':  'Yesterday & Today',      // Passé composé intro
+  'a2-u2':  'Plans & Promises',       // Futur proche
+  'a2-u3':  'Check In, Check Out',    // Travel & accommodation
+  'a2-u4':  'Life in the City',       // Urban vocabulary
+  'a2-u5':  'Likes & Dislikes',       // Preferences & opinions
+  'a2-u6':  'The Memory Palace',      // Imperfect tense
+  'a2-u7':  'Getting Things Done',    // Modal verbs (pouvoir, devoir, vouloir)
+  'a2-u8':  'Who Are They?',          // Describing people
+  'a2-u9':  'The Journey',            // Transport & travel phrases
+  'a2-u10': 'Home Sweet Home',        // Housing & furniture
+  // B1 — Intermediate
+  'b1-u1':  'What If…',              // Si + imparfait conditional
+  'b1-u2':  'I Think, Therefore…',   // Opinion & subjunctive
+  'b1-u3':  'The Story So Far',       // Mixed past tenses
+  'b1-u4':  'In Other Words',         // Relative clauses
+  'b1-u5':  'Habits of the Past',     // Imperfect habits
+  'b1-u6':  'He Said, She Said',      // Reported speech
+  'b1-u7':  'Mind & Emotion',         // Reflexive verbs
+  'b1-u8':  'Against All Odds',       // Concession & contrast
+  'b1-u9':  'The Long Game',          // Duration expressions
+  'b1-u10': 'In the End',             // Conclusion structures
+  // B2 — Upper-Intermediate
+  'b2-u1':  'Roads Not Taken',        // Third conditional
+  'b2-u2':  'Nevertheless',           // Discourse connectors
+  'b2-u3':  'The Passive Voice',      // Passive constructions
+  'b2-u4':  'It Is Essential That…', // Subjunctive in formal registers
+  'b2-u5':  'The Big Picture',        // Abstract & academic lexicon
+  'b2-u6':  'Should Have Known',      // Past modal obligation
+  'b2-u7':  'In All Likelihood',      // Probability expressions
+  'b2-u8':  'Coming to Terms',        // Reflexive idioms
+  'b2-u9':  'The Argument',           // Debate & persuasion
+  'b2-u10': 'Reading Between Lines',  // Nuance & implication
+  // C1 — Advanced
+  'c1-u1':  'The Subjunctive Mastered',
+  'c1-u2':  'Cause & Effect',
+  'c1-u3':  'The Art of Nuance',
+  'c1-u4':  'Complex Clauses',
+  'c1-u5':  'Register & Tone',
+  'c1-u6':  'The Idiomatic Mind',
+  'c1-u7':  'Literary Structures',
+  'c1-u8':  'Formal Writing',
+  'c1-u9':  'Academic Discourse',
+  'c1-u10': 'The Native Speaker',
+  // C2 — Mastery
+  'c2-u1':  'Poetic Licence',
+  'c2-u2':  'The Philosopher\'s Tongue',
+  'c2-u3':  'Beyond Translation',
+  'c2-u4':  'Wordplay & Wit',
+  'c2-u5':  'The Grand Style',
+  'c2-u6':  'Historical Register',
+  'c2-u7':  'Argot & Verlan',
+  'c2-u8':  'Political Rhetoric',
+  'c2-u9':  'The Essay',
+  'c2-u10': 'Fluency Unlocked',
+}
+
 export const UNIT_META: UnitMeta[] = (Object.keys(PHRASES) as CefrLevel[]).flatMap((level) => {
   return chunks(PHRASES[level], 3).map((_c, idx) => {
     const unitId = `${level.toLowerCase()}-u${idx + 1}`
@@ -271,7 +340,7 @@ export const UNIT_META: UnitMeta[] = (Object.keys(PHRASES) as CefrLevel[]).flatM
     return {
       id: unitId,
       cefr: level,
-      title: plan ? plan.title : `${level} Unit ${idx + 1}`,
+      title: plan?.title ?? UNIT_TITLES[unitId] ?? `${level} Unit ${idx + 1}`,
       lessonTypes: ['vocab_intro', 'guided_dialog', 'grammar_focus', 'controlled_practice', 'fluency_drill', 'unit_review'],
     }
   })
