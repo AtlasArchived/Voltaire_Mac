@@ -269,6 +269,49 @@ const a1u5Phrases: LessonPhrase[] = [
 ]
 
 // ─────────────────────────────────────────────────────────────────────────────
+// A1 Unit 6 — "Getting Around"
+// ─────────────────────────────────────────────────────────────────────────────
+const Z = 'a1-u6'
+const a1u6Practice: LPQ[] = [
+  t(Z, 'en-fr', 'Where is the bakery?',                                  'Où est la boulangerie',                  "Most shops ending in -erie are feminine. You're never far from a boulangerie in France — follow the smell."),
+  t(Z, 'fr-en', 'La mairie se trouve ici.',                              'The town hall is located here',          "The Mairie is the civic heart of every French commune — where weddings and voting take place."),
+  t(Z, 'en-fr', 'Excuse me, where is the station?',                     'Excusez-moi où est la gare',             "Always open with 'Bonjour, excusez-moi' — skipping the greeting is considered very rude."),
+  m(Z, 'To go straight ahead, you say:',                                 'Allez tout droit',                       ['Tournez à droite','Allez tout droit','Allez à droite','Tournez à gauche'], "'Tout droit' = straight. 'À droite' = right. They look similar but send you in very different directions."),
+  m(Z, "Which article is correct for 'the park'?",                       'le parc',                                ['la parc','le parc','le parque','la mairie'], "Parc is masculine. From the same root as English 'paddock' — an enclosed area."),
+  a(Z, "Build: 'Go straight ahead and turn left'",                       'Allez tout droit et tournez à gauche',   ['Allez','tout','droit','et','tournez','à','gauche'], "Command form (vous) is standard when giving directions to a stranger."),
+  a(Z, "Build: 'The bank is next to the pharmacy'",                      'La banque est à côté de la pharmacie',  ['La','banque','est','à','côté','de','la','pharmacie'], "'À côté de' requires the 'de' to link to the next location."),
+  f(Z, 'La pharmacie est à ___ de la banque.',                           'droite',                                 "Full preposition: 'à droite de' = to the right of. Always à + [direction] + de."),
+  f(Z, "Le musée est ___ face de l'école.",                              'en',                                     "The preposition is always 'en face de' — never 'à face de'. Think: in the face of the building."),
+  e(Z, 'Tournez à la gauche.',                                           'Tournez à gauche',                       "Direction phrases drop the article: 'à gauche' and 'à droite', never 'à la gauche'."),
+  e(Z, 'Je vais à le supermarché.',                                      'Je vais au supermarché',                 "Critical rule: 'à + le' MUST contract to 'au'. 'À le' is a major red flag in French."),
+  l(Z, "La gare est loin de l'hôpital.",                                 'No it is far from the hospital',         "'Loin de' = far from. 'Près de' = near. Opposites connected by the same 'de' structure."),
+  l(Z, 'Le parc est au bout de la rue.',                                 'At the end of the street',               "'Au bout de' uses the au contraction (à + le). 'Bout' sounds like 'boot'."),
+  t(Z, 'fr-en', 'Translate: "la mairie, la gare, l\'école, le musée"',  'town hall, train station, school, museum', "'École' is feminine and starts with a vowel — always l'école, never la école."),
+  t(Z, 'fr-en', 'Translate: "à gauche, à droite, tout droit, traversez"', 'left, right, straight ahead, cross',  "'Gauche' also means clumsy/tactless in French — the origin of the English word 'gauche'."),
+]
+
+const a1u6Test: LPQ[] = [
+  t(Z, 'en-fr', 'To go to the museum, please?',                         "Pour aller au musée s'il vous plaît",    "'Au' = à + le musée. Never write 'à le musée'."),
+  t(Z, 'fr-en', "Le supermarché est entre la banque et l'école.",       'The supermarket is between the bank and the school', "'Entre' works just like English 'between'. Note l'école — vowel contraction."),
+  m(Z, "Where do French people get married and vote?",                   'La mairie',                              ['Le musée','La mairie','La gare','Le parc'], "The Mairie is the symbol of the French Republic — every commune has one."),
+  m(Z, "Which contraction is correct for 'to the parks' (plural)?",     'aux parcs',                              ['à les parcs','au parcs','aux parcs','à la parcs'], "Plural contraction: 'à + les' always becomes 'aux'. A + le = au, A + les = aux."),
+  a(Z, "Build: 'Turn right after the bridge'",                          'Tournez à droite après le pont',         ['Tournez','à','droite','après','le','pont'], "'Après-ski', 'après tout' — 'après' means after in all contexts."),
+  f(Z, "L'école se trouve ___ côté de la pharmacie.",                   'à',                                      "Full preposition: 'à côté de'. The 'à' must never be dropped."),
+  e(Z, "C'est à le bout de la rue.",                                     "C'est au bout de la rue",               "Never write 'à le' — always contract to 'au' with masculine nouns."),
+  e(Z, 'Où est le pharmacie ?',                                          'Où est la pharmacie ?',                  "Places ending in -ie (pharmacie, boulangerie, boucherie) are almost always feminine."),
+  l(Z, 'Prenez la première rue à gauche.',                              'The first street on the left',            "'Première' is the feminine form of 'first', agreeing with 'la rue'. Prenez = take (imperative)."),
+  t(Z, 'fr-en', 'Translate: "en face de, à côté de, près de, loin de"', 'opposite, next to, near, far from',    "All four use 'de' to connect to the place — a consistent pattern worth memorising."),
+]
+
+const a1u6Phrases: LessonPhrase[] = [
+  { fr: 'La mairie',          en: 'The town hall',          note: "Every French commune has one. From Latin 'maior' (greater). Where weddings and elections happen." },
+  { fr: 'Où se trouve… ?',    en: 'Where is… located?',    note: "More sophisticated than 'Où est'. Literally: 'Where does it find itself?' — a reflexive construction." },
+  { fr: 'Allez tout droit',   en: 'Go straight ahead',     note: "Don't confuse with 'à droite' (right). Tout droit = straight. Easy mix-up, painful consequence." },
+  { fr: 'Tournez à gauche',   en: 'Turn left',             note: "'Gauche' also means clumsy/awkward — the origin of the English word 'gauche'." },
+  { fr: 'Au bout de',         en: 'At the end of',         note: "'au' = à + le (mandatory contraction). Never write 'à le' — it doesn't exist in French." },
+]
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Export
 // ─────────────────────────────────────────────────────────────────────────────
 export const LESSON_PLANS: Record<string, LessonPlanData> = {
@@ -277,4 +320,5 @@ export const LESSON_PLANS: Record<string, LessonPlanData> = {
   'a1-u3': { title: 'All in the Family',       theme: 'Family members, possessives & relationships', phrases: a1u3Phrases, practice: a1u3Practice, test: a1u3Test },
   'a1-u4': { title: 'Café Culture',            theme: 'Ordering food & drink, polite requests',     phrases: a1u4Phrases, practice: a1u4Practice, test: a1u4Test },
   'a1-u5': { title: 'What Are You Wearing?',   theme: 'Colors, clothing & adjective agreement',     phrases: a1u5Phrases, practice: a1u5Practice, test: a1u5Test },
+  'a1-u6': { title: 'Getting Around',          theme: 'Directions, city places & prepositions',     phrases: a1u6Phrases, practice: a1u6Practice, test: a1u6Test },
 }
