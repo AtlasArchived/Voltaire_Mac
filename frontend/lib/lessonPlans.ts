@@ -140,9 +140,53 @@ const a1u2Phrases: LessonPhrase[] = [
 ]
 
 // ─────────────────────────────────────────────────────────────────────────────
+// A1 Unit 3 — "All in the Family"
+// ─────────────────────────────────────────────────────────────────────────────
+const W = 'a1-u3'
+const a1u3Practice: LPQ[] = [
+  t(W, 'en-fr', 'My father is tall.',                                'Mon père est grand',          "Use 'mon' because 'père' is masculine."),
+  t(W, 'fr-en', 'Translate: "Voici ma mère."',                      'Here is my mother.',          "'Ma' is the feminine form of 'my'."),
+  m(W, '___ frère est petit.',                                       'Mon',                         ['Mon','Ma','Mes','Ma\''], "Frère is masculine singular — 'mon' is correct."),
+  t(W, 'fr-en', 'Translate: "père"',                                'father',                      'From Latin pater. Think: patriarch, paternal.'),
+  l(W, "J'ai deux sœurs.",                                          'Two',                         'Cultural note: siblings in French families often greet each other with la bise (cheek kisses).'),
+  a(W, "Build: 'My sister is intelligent'",                         'Ma sœur est intelligente',    ['Ma','sœur','est','intelligente'], "Adjectives add 'e' to agree with the feminine noun sœur."),
+  f(W, "C'est ___ oncle.",                                          'mon',                         "Even though 'oncle' starts with a vowel, 'mon' is used — and conveniently it prevents a sound clash too."),
+  m(W, '___ cousin est drôle.',                                     'Ton',                         ['Ton','Ta','Tes','Ma'], "'Ton' is the informal 'your' for masculine singular nouns."),
+  e(W, "C'est mon mère.",                                           "C'est ma mère",               "Common error: possessive must match the noun's gender. 'Mère' is feminine → 'ma'."),
+  t(W, 'en-fr', 'His sister is nice.',                              'Sa sœur est sympathique',     "Culture: French Sunday family dinners ('le repas du dimanche') can last 2–3 hours."),
+  t(W, 'fr-en', 'Translate: "oncle"',                              'uncle',                       "'Tante' (aunt) shares the same Latin root — 'amita'. Think: auntie."),
+  l(W, 'Voici mon grand-père et ma grand-mère.',                    'Grandfather and grandmother', "'Grand' = great/big. Grand-père literally means Great-father."),
+  a(W, "Build: 'My cousins are French'",                            'Mes cousins sont français',   ['Mes','cousins','sont','français'], "'Mes' is the plural possessive for both genders."),
+  f(W, '___ enfants sont jeunes.',                                  'Ses',                         "Use 'ses' for plural his/her. Pronounced 'say'. Ses enfants = his or her children."),
+  e(W, 'Sa frère est petit.',                                       'Son frère est petit',         "Even if 'she' owns the brother, 'frère' is masculine → 'son'. The possessive follows the noun, not the owner."),
+]
+
+const a1u3Test: LPQ[] = [
+  t(W, 'en-fr', 'Her brother has a dog.',                          'Son frère a un chien',        "Use 'avoir' (a) for possessions. 'Son' because frère is masculine."),
+  m(W, '___ amie est ici.',                                        'Mon',                         ['Mon','Ma','Me','Mes'], "Advanced rule: 'ma' becomes 'mon' before a vowel sound — 'mon amie' flows better."),
+  t(W, 'fr-en', 'Translate: "fils"',                              'son',                         "The 'l' is completely silent. Sounds like 'fees'. Fils ends in 's' even in singular."),
+  e(W, 'Ma frère est grand.',                                     'Mon frère est grand',         'Subject-possessive agreement is based on the noun gender, not the speaker.'),
+  l(W, 'Elle est ma tante préférée.',                             'My favorite aunt',            "Note adjective placement: 'préférée' comes after the noun in French."),
+  a(W, "Build: 'Your son is funny'",                              'Ton fils est drôle',          ['Ton','fils','est','drôle'], "'Fils' ends in 's' in singular — it looks plural but isn't."),
+  f(W, "Ma ___ s'appelle Claire.",                                'fille',                       "'Fille' = daughter (with possessive 'ma') or girl (without possessive)."),
+  e(W, "C'est sa mari.",                                          "C'est son mari",              "'Mari' is masculine → requires 'son', even when the wife is the speaker."),
+  m(W, '___ parents sont à Paris.',                               'Ses',                         ['Ses','Son','Sa','Ma'], "Plural nouns always take 'mes', 'tes', or 'ses' — never the singular forms."),
+  t(W, 'en-fr', 'Here is my aunt.',                              'Voici ma tante',              "'Voici' = Vois (see) + ici (here). Literally 'See here.'"),
+]
+
+const a1u3Phrases: LessonPhrase[] = [
+  { fr: 'Mon père / Ma mère',   en: 'My father / My mother',     note: "From Latin pater and mater — the roots of patriarch, maternal, fraternal." },
+  { fr: 'Mon frère / Ma sœur',  en: 'My brother / My sister',    note: "Fraternity = brotherhood. Sorority = sisterhood. The same Latin roots survive in French." },
+  { fr: 'Son frère / Sa sœur',  en: 'His or her brother / sister', note: "Critical rule: the possessive matches the noun's gender — not the owner's." },
+  { fr: 'Mon amie',             en: 'My friend (female)',         note: "Use 'mon' instead of 'ma' before any vowel sound to keep speech flowing." },
+  { fr: 'Mon fils / Ma fille',  en: 'My son / My daughter',      note: "'Fils': the l is completely silent. 'Fille': sounds like fee-yuh. Both also mean boy/girl." },
+]
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Export
 // ─────────────────────────────────────────────────────────────────────────────
 export const LESSON_PLANS: Record<string, LessonPlanData> = {
-  'a1-u1': { title: 'The First Encounter',  theme: 'Greetings & Introductions', phrases: a1u1Phrases, practice: a1u1Practice, test: a1u1Test },
-  'a1-u2': { title: 'The Rhythm of Life',   theme: 'Numbers, Dates & Time',      phrases: a1u2Phrases, practice: a1u2Practice, test: a1u2Test },
+  'a1-u1': { title: 'The First Encounter',  theme: 'Greetings & Introductions',         phrases: a1u1Phrases, practice: a1u1Practice, test: a1u1Test },
+  'a1-u2': { title: 'The Rhythm of Life',   theme: 'Numbers, Dates & Time',             phrases: a1u2Phrases, practice: a1u2Practice, test: a1u2Test },
+  'a1-u3': { title: 'All in the Family',    theme: 'Family members, possessives & relationships', phrases: a1u3Phrases, practice: a1u3Practice, test: a1u3Test },
 }
