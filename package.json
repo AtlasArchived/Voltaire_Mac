@@ -1,10 +1,11 @@
 {
   "name": "voltaire-desktop",
-  "version": "2.0.0",
-  "description": "Voltaire — French learning desktop shell (Electron + Next.js + FastAPI)",
+  "version": "1.0.0",
   "private": true,
   "main": "electron/main.js",
   "scripts": {
+    "build": "cd frontend && npm install && npm run build",
+    "start": "bash -c \"cd backend && uvicorn main:app --host 127.0.0.1 --port 8000 & cd frontend && npm run start -- -p 5000 -H 0.0.0.0\"",
     "desktop": "electron .",
     "desktop:dev": "electron .",
     "desktop:build-frontend": "cd frontend && npm run build",
@@ -17,7 +18,6 @@
   "build": {
     "appId": "com.voltaire.desktop",
     "productName": "Voltaire",
-    "asar": false,
     "directories": {
       "output": "dist"
     },
@@ -25,17 +25,11 @@
       "electron/**/*",
       "backend/**/*",
       "frontend/**/*",
-      "package.json",
-      "!**/.env",
-      "!**/.env.*",
-      "!**/cato_mind.db",
-      "!logs/**",
-      "!.git/**",
-      "!frontend/.next/cache/**",
-      "!**/*.log"
+      ".env",
+      "cato_mind.db",
+      "package.json"
     ],
     "mac": {
-      "icon": "build/Voltaire.icns",
       "target": [
         "dmg"
       ],
