@@ -498,3 +498,7 @@ export const LESSON_PLANS: Record<string, LessonPlanData> = {
   'a1-u9':  { title: 'At the Market',           theme: 'Shopping, partitive articles & polite requests',  phrases: a1u9Phrases,  practice: a1u9Practice,  test: a1u9Test  },
   'a1-u10': { title: 'À bientôt!',              theme: 'Farewells, travel & countries with prepositions', phrases: a1u10Phrases, practice: a1u10Practice, test: a1u10Test },
 }
+
+// A2 Units 4–10 — extended hand-authored lesson plans
+import { A2_LESSON_PLANS_EXTENDED } from './a2LessonPlansExtended'
+Object.assign(LESSON_PLANS, A2_LESSON_PLANS_EXTENDED)
