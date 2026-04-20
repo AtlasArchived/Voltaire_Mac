@@ -20,7 +20,7 @@ export default function Home() {
   const xpGoal     = streak?.daily_goal_xp || 50
   const xpPct      = Math.min(100, Math.round((xpToday / Math.max(xpGoal, 1)) * 100))
   const curStreak  = streak?.current_streak || 0
-  const totalXp    = (memory as any)?.total_xp_lifetime ?? (memory as any)?.lifetime_xp ?? 0
+  const longestStreak = memory?.longest_streak || curStreak
   const heartCount = 5
 
   // Current CEFR level (highest unlocked)
@@ -53,7 +53,8 @@ export default function Home() {
   const goalReached = xpToday >= xpGoal
 
   function continueLearning() {
-    if (currentUnit) setCurrentUnitId(currentUnit.id)
+    if (!currentUnit) return
+    setCurrentUnitId(currentUnit.id)
     router.push('/learn')
   }
 
@@ -62,7 +63,7 @@ export default function Home() {
   const RING_C = 2 * Math.PI * RING_R
   const xpDash = (xpPct / 100) * RING_C
 
-  const topMission = missions?.[0]
+  const topMission = missions?.find(m => m.unlocked && !m.completed) || missions?.[0]
 
   return (
     <div style={{padding:'32px 40px',maxWidth:1200,margin:'0 auto'}}>
@@ -83,8 +84,10 @@ export default function Home() {
         {/* Daily goal ring */}
         <div style={card()}>
           <div style={{display:'flex',alignItems:'center',gap:18}}>
-            <div style={{position:'relative',width:140,height:140,flexShrink:0}}>
-              <svg width="140" height="140" viewBox="0 0 140 140">
+            <div style={{position:'relative',width:140,height:140,flexShrink:0}}
+              role="progressbar" aria-valuenow={xpToday} aria-valuemin={0} aria-valuemax={xpGoal}
+              aria-label={`Daily XP progress: ${xpToday} of ${xpGoal} XP, ${xpPct}% of goal`}>
+              <svg width="140" height="140" viewBox="0 0 140 140" aria-hidden="true">
                 <circle cx="70" cy="70" r={RING_R} fill="none" stroke="var(--border)" strokeWidth="10"/>
                 <circle cx="70" cy="70" r={RING_R} fill="none"
                   stroke={goalReached ? '#58cc02' : '#4f9cf9'} strokeWidth="10"
@@ -120,6 +123,9 @@ export default function Home() {
             {curStreak >= 7 ? 'A week of consistency. Magnifique.'
               : curStreak > 0 ? 'Keep it going. Daily reps compound fast.'
               : 'Start your first day. The streak begins now.'}
+            {longestStreak > curStreak && (
+              <div style={{marginTop:4,fontSize:11,color:'var(--t3)'}}>Personal best: {longestStreak} days</div>
+            )}
           </div>
         </div>
 
@@ -157,8 +163,10 @@ export default function Home() {
           <div style={{fontSize:13,color:'var(--t2)',fontWeight:600,marginBottom:18}}>
             {currentUnit?.cefr} · Unit {(parseInt(currentUnit?.id?.split('-u')[1] || '1', 10))}
           </div>
-          <button onClick={continueLearning} style={primaryBtn()}>
-            ▶  Continue
+          <button onClick={continueLearning} disabled={!currentUnit}
+            style={{...primaryBtn(), opacity: currentUnit ? 1 : 0.45, cursor: currentUnit ? 'pointer' : 'not-allowed'}}
+            aria-label={currentUnit ? `Continue ${currentUnit.title}` : 'No unit available yet'}>
+            ▶  {currentUnit ? 'Continue' : 'No unit yet'}
           </button>
         </div>
 
@@ -196,9 +204,13 @@ export default function Home() {
           <div style={{fontSize:11,fontWeight:700,color:'var(--t3)',letterSpacing:'.12em',marginBottom:8}}>TODAY'S MISSION</div>
           {topMission ? (
             <>
-              <div style={{fontSize:18,fontWeight:800,marginBottom:6}}>{(topMission as any).title || (topMission as any).name || 'Daily quest'}</div>
+              <div style={{fontSize:18,fontWeight:800,marginBottom:6}}>
+                {topMission.completed ? `${topMission.level} mission complete ✓` : `Reach ${topMission.level} mastery`}
+              </div>
               <div style={{fontSize:13,color:'var(--t2)',fontWeight:600,lineHeight:1.5}}>
-                {(topMission as any).description || (topMission as any).goal || 'Complete a lesson to make progress.'}
+                {topMission.completed
+                  ? 'Strong work. Keep practicing to maintain your edge.'
+                  : `Hit ${topMission.required_pct}% accuracy on ${topMission.level} questions to unlock the next checkpoint.`}
               </div>
             </>
           ) : (
