@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { useApp } from './AppContext'
 import { UNIT_META, CEFR_ELO, type CefrLevel } from '../lib/questionBank'
-import { getCompletedUnits } from '../lib/lessonProgress'
+import { getCompletedUnits, syncCompletedFromServer } from '../lib/lessonProgress'
 
 export default function Home() {
   const router = useRouter()
@@ -13,6 +13,7 @@ export default function Home() {
 
   useEffect(() => {
     setCompleted([...getCompletedUnits()])
+    syncCompletedFromServer().then(({ units }) => setCompleted([...units]))
   }, [])
 
   const elo        = learner?.elo || 800
