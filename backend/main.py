@@ -23,9 +23,7 @@ sys.path.insert(0, str(_root))
 # Also add current dir
 sys.path.insert(0, str(_here))
 
-from paths import get_db_path
-
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
@@ -102,9 +100,6 @@ class LearnProgressRequest(BaseModel):
     correct: bool
     mode: str = "learn"
 
-class AdaptiveMasterySaveRequest(BaseModel):
-    mastery: dict = {}
-
 class C1StatusResponse(BaseModel):
     elo: int
     target_elo: int
@@ -121,14 +116,6 @@ class CefrCheckpointResponse(BaseModel):
     required_pct: int
     recommendation: str
 
-class LessonMemoryIn(BaseModel):
-    lesson_id: str
-    title: str
-    source: str = "course"
-    unit_id: Optional[str] = None
-    detail: Optional[str] = None
-
-
 class CheckpointSubmitRequest(BaseModel):
     score_pct: Optional[int] = None
 
@@ -143,8 +130,8 @@ class AiMistakeFeedbackRequest(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _gemini_key() -> str:
-    return os.getenv("CATO_GEMINI_KEY", "")
+def _groq_key() -> str:
+    return os.getenv("GROQ_API_KEY", "")
 
 def _safe(func, *args, fallback=None, **kwargs):
     try:
@@ -156,11 +143,11 @@ def _safe(func, *args, fallback=None, **kwargs):
 
 def _ensure_core_db() -> None:
     """
-    This Mac bundle can be distributed without init scripts/modules.
     Ensure the minimum schema exists so onboarding can complete.
+    Migrations run via ALTER TABLE so existing data is preserved.
     """
     import sqlite3
-    with sqlite3.connect(get_db_path()) as db:
+    with sqlite3.connect("cato_mind.db") as db:
         db.execute("""
             CREATE TABLE IF NOT EXISTS learner (
                 id INTEGER PRIMARY KEY,
@@ -179,7 +166,23 @@ def _ensure_core_db() -> None:
         db.execute("""
             CREATE TABLE IF NOT EXISTS streak_state (
                 id INTEGER PRIMARY KEY,
-                daily_goal_xp INTEGER NOT NULL DEFAULT 50
+                daily_goal_xp   INTEGER NOT NULL DEFAULT 50,
+                current_streak  INTEGER NOT NULL DEFAULT 0,
+                longest_streak  INTEGER NOT NULL DEFAULT 0,
+                last_active_date TEXT,
+                xp_today        INTEGER NOT NULL DEFAULT 0,
+                xp_today_date   TEXT
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS lesson_log (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                finished_at       TEXT NOT NULL DEFAULT (datetime('now')),
+                unit_id           TEXT NOT NULL DEFAULT 'general',
+                cefr              TEXT NOT NULL DEFAULT 'A1',
+                questions_answered INTEGER NOT NULL DEFAULT 0,
+                accuracy_pct      INTEGER NOT NULL DEFAULT 0,
+                xp_earned         INTEGER NOT NULL DEFAULT 0
             )
         """)
         db.execute("""
@@ -196,41 +199,43 @@ def _ensure_core_db() -> None:
                 expected_answer TEXT
             )
         """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS completed_units (
+                unit_id      TEXT PRIMARY KEY,
+                kind         TEXT NOT NULL DEFAULT 'unit',
+                completed_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
         db.execute(
             "INSERT OR IGNORE INTO learner (id, name, elo, xp, unit_level) VALUES (1, 'Learner', 800, 0, 1)"
         )
         db.execute(
             "INSERT OR IGNORE INTO streak_state (id, daily_goal_xp) VALUES (1, 50)"
         )
+        # Migrate adaptive_events
         cols = {r[1] for r in db.execute("PRAGMA table_info(adaptive_events)").fetchall()}
         if "cefr" not in cols:
             db.execute("ALTER TABLE adaptive_events ADD COLUMN cefr TEXT NOT NULL DEFAULT 'A1'")
         if "skill_tag" not in cols:
             db.execute("ALTER TABLE adaptive_events ADD COLUMN skill_tag TEXT NOT NULL DEFAULT 'general'")
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS lesson_completion_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                lesson_id TEXT NOT NULL,
-                unit_id TEXT,
-                title TEXT NOT NULL,
-                source TEXT NOT NULL DEFAULT 'course',
-                detail TEXT
-            )
-        """)
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS hover_translation_cache (
-                fr_norm TEXT PRIMARY KEY,
-                en_text TEXT NOT NULL,
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            )
-        """)
+        # Migrate streak_state — add new columns if coming from old schema
+        scols = {r[1] for r in db.execute("PRAGMA table_info(streak_state)").fetchall()}
+        if "current_streak" not in scols:
+            db.execute("ALTER TABLE streak_state ADD COLUMN current_streak INTEGER NOT NULL DEFAULT 0")
+        if "longest_streak" not in scols:
+            db.execute("ALTER TABLE streak_state ADD COLUMN longest_streak INTEGER NOT NULL DEFAULT 0")
+        if "last_active_date" not in scols:
+            db.execute("ALTER TABLE streak_state ADD COLUMN last_active_date TEXT")
+        if "xp_today" not in scols:
+            db.execute("ALTER TABLE streak_state ADD COLUMN xp_today INTEGER NOT NULL DEFAULT 0")
+        if "xp_today_date" not in scols:
+            db.execute("ALTER TABLE streak_state ADD COLUMN xp_today_date TEXT")
 
 
 def _get_learner_elo() -> int:
     _ensure_core_db()
     import sqlite3
-    with sqlite3.connect(get_db_path()) as db:
+    with sqlite3.connect("cato_mind.db") as db:
         row = db.execute("SELECT elo FROM learner WHERE id=1").fetchone()
     return int(row[0]) if row else 800
 
@@ -276,7 +281,7 @@ def _skill_tag_for(q_type: str, prompt: str) -> str:
 def _adaptive_profile(limit: int = 250):
     import sqlite3
     _ensure_core_db()
-    with sqlite3.connect(get_db_path()) as db:
+    with sqlite3.connect("cato_mind.db") as db:
         rows = db.execute(
             """
             SELECT q_type, prompt, correct, response_ms
@@ -368,28 +373,58 @@ def _adaptive_profile(limit: int = 250):
     }
 
 
-# Appended to Voltaire / lesson tutor system prompts so the model never defaults to English.
-VOLTAIRE_FRENCH_ONLY_SYSTEM = (
-    "\n\n[Règle absolue — langue] Tu es Voltaire, tuteur de français. "
-    "Toutes tes réponses doivent être ENTIÈREMENT en français (aucune phrase en anglais ni autre langue). "
-    "Si l'élève écrit dans une autre langue, réponds quand même en français et invite-le poliment à continuer en français. "
-    "Corrections, explications et encouragements : uniquement en français."
-)
+# Bilingual tutor system instruction — French for practice, English for explanations/corrections.
+VOLTAIRE_FRENCH_ONLY_SYSTEM = """
+
+You are Voltaire, a warm, patient, and encouraging AI French tutor. Your goal is to help an English-speaking student (currently at an A2 level) improve through natural, supportive conversation. Your tone is that of a friendly young Parisian who studied in London: intellectual yet accessible, truthful, and genuinely enthusiastic about sharing French culture.
+
+CONVERSATIONAL RULES
+Default Language: Speak in French as much as possible. Use simple vocabulary, present tense, and basic past tenses (passé composé) appropriate for an A2 learner.
+
+When to Switch to English: Automatically switch to English only if:
+- The student makes a grammar, spelling, or vocabulary mistake.
+- The student asks a question in English.
+- The student expresses confusion or frustration.
+
+Correction Structure: When the student makes a mistake, address it immediately using this three-part format:
+1. Explanation: A brief, clear English explanation of the error.
+2. Correction: The corrected French sentence in italics.
+3. Engagement: A follow-up question or comment in French to keep the conversation moving.
+
+PERSONA & TONE
+Encouraging: Celebrate progress. Use phrases like "C'est une excellente question !" or "Très bien !"
+Cultural Guide: Occasionally sprinkle in brief historical or cultural notes about France (e.g., a specific café habit in Paris or a fact about the French Revolution) to add depth to the lesson.
+Intellectual & Clear: Avoid robotic or overly formal language; stick to standard, elegant French and English.
+Proactive: If the conversation stalls, suggest a topic like travel, sports, daily life, or French culture.
+
+EXAMPLE INTERACTION
+Student: "J'ai mangé un pomme."
+Voltaire: "In French, 'pomme' is a feminine noun, so we use 'une' instead of 'un'.
+*J'ai mangé une pomme.*
+Quelle est ta façon préférée de manger les pommes ?"
+
+GUIDING PRINCIPLE
+Maintain the flow of a real conversation. You are not a robot; you are a mentor. If the student is struggling, simplify your French, but never stop being their partner in learning.
+"""
 
 
 def _fallback_tutor_reply(user_text: str, persona: str = "voltaire") -> str:
     text = (user_text or "").strip()
     if persona == "mathieu":
         return (
-            "D'accord, on continue en francais. "
-            "Dis-moi une phrase sur ta journee, et je te corrige doucement si besoin."
+            "Let's keep going! Tell me a sentence about your day in French "
+            "and I'll gently correct anything that needs fixing."
         )
     if not text:
-        return "Bienvenue. Ecrivons en francais. Dis-moi comment s'est passee ta journee."
+        return (
+            "Bonjour! I'm Voltaire, your French tutor. "
+            "I'll practice French conversation with you and explain any mistakes in English. "
+            "Let's start — tell me how your day is going, in French if you can: "
+            "*Comment se passe ta journée ?*"
+        )
     return (
-        "Bonne tentative. Version plus naturelle: "
-        f"\"{text}\". "
-        "Maintenant, reponds avec une phrase un peu plus longue en francais."
+        f"Good effort! A more natural way to say that would be: *\"{text}\"*. "
+        "Try building on that — can you add one more detail in French?"
     )
 
 
@@ -400,11 +435,6 @@ def _ai_json_or_none(prompt: str):
         txt = (result or {}).get("text", "").strip()
         if not txt:
             return None
-        # Strip markdown code fences the model sometimes wraps around JSON
-        import re as _re
-        txt = _re.sub(r"^```(?:json)?\s*", "", txt, flags=_re.IGNORECASE)
-        txt = _re.sub(r"\s*```$", "", txt)
-        txt = txt.strip()
         return json.loads(txt)
     except Exception:
         return None
@@ -418,7 +448,7 @@ def _checkpoint_required_pct(level: str) -> int:
 def _recent_accuracy(limit: int = 40):
     import sqlite3
     _ensure_core_db()
-    with sqlite3.connect(get_db_path()) as db:
+    with sqlite3.connect("cato_mind.db") as db:
         rows = db.execute(
             "SELECT correct FROM adaptive_events ORDER BY id DESC LIMIT ?",
             (limit,),
@@ -434,7 +464,7 @@ def _load_checkpoints():
     import sqlite3
     _ensure_core_db()
     out = {}
-    with sqlite3.connect(get_db_path()) as db:
+    with sqlite3.connect("cato_mind.db") as db:
         rows = db.execute(
             "SELECT key, value FROM app_settings WHERE key LIKE 'checkpoint_%'"
         ).fetchall()
@@ -450,112 +480,13 @@ def health():
     return {"status": "ok", "version": "2.0"}
 
 
-# ── Lesson memory log (completed milestones) ──────────────────────────────────
-
-@app.post("/api/lesson-memory")
-def post_lesson_memory(body: LessonMemoryIn):
-    _ensure_core_db()
-    import sqlite3
-    try:
-        with sqlite3.connect(get_db_path()) as db:
-            db.execute(
-                """INSERT INTO lesson_completion_log (lesson_id, unit_id, title, source, detail)
-                   VALUES (?,?,?,?,?)""",
-                (
-                    body.lesson_id[:200],
-                    (body.unit_id or "")[:120] or None,
-                    body.title[:500],
-                    body.source[:80],
-                    (body.detail or "")[:2000] or None,
-                ),
-            )
-        return {"ok": True}
-    except Exception as exc:
-        log.warning("lesson-memory log: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@app.get("/api/lesson-memory")
-def get_lesson_memory(limit: int = 100):
-    _ensure_core_db()
-    import sqlite3
-    lim = max(1, min(limit, 200))
-    with sqlite3.connect(get_db_path()) as db:
-        rows = db.execute(
-            """SELECT id, created_at, lesson_id, unit_id, title, source, detail
-               FROM lesson_completion_log ORDER BY id DESC LIMIT ?""",
-            (lim,),
-        ).fetchall()
-    items = [
-        {
-            "id": r[0],
-            "created_at": r[1],
-            "lesson_id": r[2],
-            "unit_id": r[3] or "",
-            "title": r[4],
-            "source": r[5],
-            "detail": r[6] or "",
-        }
-        for r in rows
-    ]
-    return {"items": items}
-
-
-# ── Hover translation (French → English, cached) ─────────────────────────────
-
-def _hover_lookup_cached(word: str, langpair: str) -> str:
-    import sqlite3
-    import urllib.parse
-    import urllib.request
-
-    w = word.strip().lower()
-    if not w or len(w) > 80:
-        return ""
-    cache_key = f"{langpair}:{w}"
-    _ensure_core_db()
-    with sqlite3.connect(get_db_path()) as db:
-        row = db.execute(
-            "SELECT en_text FROM hover_translation_cache WHERE fr_norm = ?", (cache_key,)
-        ).fetchone()
-        if row and row[0]:
-            return row[0]
-    try:
-        q = urllib.parse.urlencode({"q": w, "langpair": langpair})
-        url = f"https://api.mymemory.translated.net/get?{q}"
-        with urllib.request.urlopen(url, timeout=5) as resp:
-            data = json.loads(resp.read().decode())
-        out = (data.get("responseData") or {}).get("translatedText") or ""
-        if not out or "MYMEMORY WARNING" in out.upper():
-            return ""
-        with sqlite3.connect(get_db_path()) as db:
-            db.execute(
-                "INSERT OR REPLACE INTO hover_translation_cache (fr_norm, en_text) VALUES (?,?)",
-                (cache_key, out[:500]),
-            )
-        return out
-    except Exception as exc:
-        log.warning("hover translate %s: %s", w, exc)
-        return ""
-
-
-@app.get("/api/translate/hover")
-def translate_hover(q: str = "", pair: str = "fr|en"):
-    if not q or not q.strip():
-        return {"text": ""}
-    lp = pair if "|" in pair else "fr|en"
-    if lp not in ("fr|en", "en|fr"):
-        lp = "fr|en"
-    gloss = _hover_lookup_cached(q, lp)
-    return {"text": gloss or "—"}
-
-
 # ── Learner ───────────────────────────────────────────────────────────────────
 
 @app.get("/api/learner")
 def get_learner():
     try:
         import sqlite3
-        with sqlite3.connect(get_db_path()) as db:
+        with sqlite3.connect("cato_mind.db") as db:
             r = db.execute(
                 "SELECT name, elo, xp, unit_level FROM learner LIMIT 1"
             ).fetchone()
@@ -570,13 +501,29 @@ def get_learner():
 def get_streak():
     try:
         from streak import get_streak_state, get_weekly_summary
-        state   = get_streak_state()
-        weekly  = get_weekly_summary()
+        state  = get_streak_state()
+        weekly = get_weekly_summary()
         return {**state, "weekly": weekly}
     except Exception as exc:
         log.warning("Streak error: %s", exc)
-        return {"current_streak": 0, "xp_today": 0, "daily_goal_xp": 50,
-                "goal_pct": 0, "streak_freezes": 0, "weekly": []}
+    # Fallback: read directly from streak_state table
+    try:
+        import sqlite3
+        _ensure_core_db()
+        with sqlite3.connect("cato_mind.db") as db:
+            ss = db.execute(
+                "SELECT daily_goal_xp, current_streak, longest_streak, xp_today FROM streak_state WHERE id=1"
+            ).fetchone()
+        if ss:
+            goal_xp, cur, longest, xp_today = ss
+            goal_pct = min(100, int((xp_today / max(goal_xp, 1)) * 100))
+            return {"current_streak": cur, "longest_streak": longest,
+                    "xp_today": xp_today, "daily_goal_xp": goal_xp,
+                    "goal_pct": goal_pct, "streak_freezes": 0, "weekly": []}
+    except Exception:
+        pass
+    return {"current_streak": 0, "xp_today": 0, "daily_goal_xp": 50,
+            "goal_pct": 0, "streak_freezes": 0, "weekly": []}
 
 
 @app.get("/api/due-count")
@@ -597,7 +544,7 @@ def get_lesson_state():
         from lesson_engine import get_unlocked_units
         import sqlite3
         thread  = load_thread()
-        with sqlite3.connect(get_db_path()) as db:
+        with sqlite3.connect("cato_mind.db") as db:
             learner = db.execute("SELECT elo FROM learner LIMIT 1").fetchone()
         elo = learner[0] if learner else 800
         return {
@@ -616,44 +563,29 @@ def get_lesson_state():
 
 @app.post("/api/lesson/start")
 async def start_lesson():
-    """Start a lesson — returns first Voltaire message. Non-streaming."""
+    """Start a lesson — returns first Voltaire message via Groq."""
     try:
-        from curriculum import (load_thread, save_thread, build_voltaire_system_prompt,
-                                 build_opening_prompt, check_level_promotion)
-        from spaced_repetition import get_due_words
-        from gpu_router import route_and_call
-        from lesson_engine import annotate_text
-        from elo_engine import open_session
-
-        thread    = load_thread()
-        due_words = get_due_words(limit=5)
-        promotion = check_level_promotion(800, thread)
-        if promotion:
-            thread.level_up(promotion)
-
-        sys_p  = build_voltaire_system_prompt(800, thread) + VOLTAIRE_FRENCH_ONLY_SYSTEM
-        usr_p  = build_opening_prompt(thread, due_words)
-        result = route_and_call(usr_p, system=sys_p, gemini_api_key=_gemini_key())
-        annotated = annotate_text(result["text"])
-
-        session_id = open_session(mode="study")
-        thread.record_lesson()
-        save_thread(thread)
-
-        return {
-            "text":       result["text"],
-            "annotated":  annotated,
-            "backend":    result.get("backend", "unknown"),
-            "session_id": session_id,
-        }
-    except Exception:
+        from groq import Groq
+        client = Groq(api_key=_groq_key())
+        resp = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": VOLTAIRE_FRENCH_ONLY_SYSTEM},
+                {"role": "user",   "content": (
+                    "Start the lesson. Greet the student warmly in French, "
+                    "ask them a simple conversational question to get started, "
+                    "and keep it to 2–3 sentences."
+                )},
+            ],
+            temperature=0.8,
+            max_tokens=200,
+        )
+        text = resp.choices[0].message.content.strip()
+        return {"text": text, "annotated": text, "backend": "groq", "session_id": "groq-session"}
+    except Exception as exc:
+        logging.warning(f"lesson/start Groq error: {exc}")
         text = _fallback_tutor_reply("")
-        return {
-            "text": text,
-            "annotated": text,
-            "backend": "fallback",
-            "session_id": "local-fallback",
-        }
+        return {"text": text, "annotated": text, "backend": "fallback", "session_id": "local-fallback"}
 
 
 @app.post("/api/lesson/answer")
@@ -705,69 +637,66 @@ async def answer_lesson(req: AnswerRequest):
 @app.post("/api/lesson/answer/stream")
 async def answer_lesson_stream(req: AnswerRequest):
     """
-    Streaming version using route_and_call (same as lesson/start — proven to work).
-    Builds history into the prompt so Voltaire remembers the conversation.
-    Streams word-by-word for the typing effect.
+    Streaming tutor response via Groq.
+    Passes the full conversation history as proper chat messages so Voltaire
+    has context, then streams token-by-token using Groq's native streaming.
     """
     async def generate():
         try:
-            from curriculum import load_thread, build_voltaire_system_prompt
-            from gpu_router import route_and_call
+            import concurrent.futures
+            from groq import Groq
 
-            thread = load_thread()
-            sys_p  = build_voltaire_system_prompt(800, thread) + VOLTAIRE_FRENCH_ONLY_SYSTEM
-            key    = _gemini_key()
+            key = _groq_key()
+            if not key:
+                raise ValueError("GROQ_API_KEY not set")
 
-            # Build conversation history into the prompt as plain text
-            history_lines = []
-            for msg in req.history[-14:]:  # last 14 messages
-                role = "Voltaire" if msg.get("role") == "assistant" else "Jackson"
+            # Build messages: system + conversation history + new user message
+            messages: list[dict] = [
+                {"role": "system", "content": VOLTAIRE_FRENCH_ONLY_SYSTEM}
+            ]
+            for msg in req.history[-20:]:
+                role = "assistant" if msg.get("role") == "assistant" else "user"
                 text = str(msg.get("text") or msg.get("content") or "").strip()
                 if text:
-                    history_lines.append(f"{role}: {text}")
+                    messages.append({"role": role, "content": text})
+            messages.append({"role": "user", "content": req.user_input})
 
-            if history_lines:
-                history_block = "\n\n".join(history_lines)
-                prompt = (
-                    f"[Suite de la leçon — ne te présente pas à nouveau. "
-                    f"Réponds directement au dernier message de l'élève. "
-                    f"Réponse UNIQUEMENT en français.]\n\n"
-                    f"Conversation :\n{history_block}\n\n"
-                    f"Élève : {req.user_input}\n\n"
-                    f"Voltaire (poursuis en français) :"
-                )
-            else:
-                prompt = (
-                    f"Élève : {req.user_input}\n\n"
-                    f"Voltaire (réponds uniquement en français) :"
-                )
-
-            # Run in thread pool so we don't block the event loop
-            import concurrent.futures
+            # Groq streaming runs synchronously — offload to thread pool
             loop = asyncio.get_event_loop()
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                result = await loop.run_in_executor(
-                    pool,
-                    lambda: route_and_call(prompt, system=sys_p, gemini_api_key=key)
+
+            def _stream_groq():
+                client = Groq(api_key=key)
+                return client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=messages,
+                    temperature=0.75,
+                    max_tokens=500,
+                    stream=True,
                 )
 
-            text_out = result.get("text") if result else None
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                stream = await loop.run_in_executor(pool, _stream_groq)
 
-            if not text_out or not isinstance(text_out, str):
-                yield f"data: {json.dumps({'error': 'Empty response from AI backend'})}\n\n"
-                yield "data: [DONE]\n\n"
-                return
+            # Collect chunks from the sync iterator in a thread
+            def _collect(s):
+                parts = []
+                for chunk in s:
+                    delta = chunk.choices[0].delta
+                    if delta and delta.content:
+                        parts.append(delta.content)
+                return parts
 
-            # Stream word by word
-            words = text_out.split(" ")
-            for i, word in enumerate(words):
-                token = word if i == len(words) - 1 else word + " "
-                yield f"data: {json.dumps({'token': token})}\n\n"
-                await asyncio.sleep(0.012)
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                tokens = await loop.run_in_executor(pool, _collect, stream)
+
+            for tok in tokens:
+                yield f"data: {json.dumps({'token': tok})}\n\n"
+                await asyncio.sleep(0.008)
 
             yield "data: [DONE]\n\n"
 
-        except Exception:
+        except Exception as exc:
+            logging.warning(f"Tutor stream error: {exc}")
             text = _fallback_tutor_reply(req.user_input)
             for i, word in enumerate(text.split(" ")):
                 token = word if i == len(text.split(" ")) - 1 else word + " "
@@ -994,80 +923,93 @@ def get_drill_questions(n: int = 10):
 @app.post("/api/drill/arrange-feedback")
 async def arrange_feedback(req: ArrangeFeedbackRequest):
     """
-    Give fast correction/explanation for sentence-order errors.
-    Uses AI when available, with a deterministic fallback.
+    Give fast correction/explanation for sentence-order errors via Groq.
     """
+    import re as _re
+    corrected = req.correct_answer.strip()
+    user = req.user_answer.strip()
+    if not corrected:
+        return {"corrected": corrected, "explanation": "Use subject + verb + complements in French word order."}
     try:
-        corrected = req.correct_answer.strip()
-        user = req.user_answer.strip()
-        if not corrected:
-            return {"corrected": corrected, "explanation": "Use subject + verb + complements in French word order."}
-
+        from groq import Groq
+        client = Groq(api_key=_groq_key())
         prompt = (
-            "You are a concise French tutor. The learner made a sentence-order mistake.\n"
-            "Return strict JSON only with keys: corrected, explanation.\n"
-            "Rules:\n"
-            "- explanation max 2 short sentences\n"
-            "- focus on word order or grammar placement\n"
-            "- keep beginner-friendly language\n\n"
+            "You are a concise French tutor. A student arranged words in the wrong order.\n"
+            "Return ONLY valid JSON with keys: corrected, explanation.\n"
+            "Rules: explanation must be 1-2 clear English sentences about the specific word-order or grammar mistake. "
+            "Keep language beginner-friendly.\n\n"
             f"Exercise prompt: {req.prompt}\n"
-            f"Learner answer: {user}\n"
+            f"Student's answer: {user}\n"
             f"Correct answer: {corrected}\n"
         )
-        try:
-            from gpu_router import route_and_call
-            result = route_and_call(prompt, gemini_api_key=_gemini_key())
-            txt = (result or {}).get("text", "").strip()
-            if txt:
-                data = json.loads(txt)
-                corr = str(data.get("corrected", corrected)).strip() or corrected
-                expl = str(data.get("explanation", "")).strip()
-                if expl:
-                    return {"corrected": corr, "explanation": expl}
-        except Exception:
-            pass
-
-        # Fallback path: still give immediate, useful feedback.
+        resp = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1, max_tokens=180,
+        )
+        txt = resp.choices[0].message.content.strip()
+        txt = _re.sub(r'^```(?:json)?\s*', '', txt)
+        txt = _re.sub(r'\s*```$', '', txt)
+        data = json.loads(txt)
         return {
-            "corrected": corrected,
-            "explanation": "Word order is off. In French, keep the verb close to the subject and place negation as ne + verb + pas."
+            "corrected": str(data.get("corrected", corrected)).strip() or corrected,
+            "explanation": str(data.get("explanation", "")).strip(),
         }
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logging.warning(f"arrange-feedback Groq error: {exc}")
+        return {
+            "corrected": corrected,
+            "explanation": "Word order is off. In French, keep the verb right after the subject and place negation as ne…pas around the verb.",
+        }
 
 
 @app.post("/api/ai/mistake-feedback")
 def ai_mistake_feedback(req: AiMistakeFeedbackRequest):
     """
-    Universal mistake feedback for any exercise mode.
-    Returns concise correction + explanation + targeted next step.
+    Universal mistake feedback for any exercise mode via Groq.
+    Returns a specific English explanation + corrected answer + next step.
     """
+    import re as _re
     try:
+        from groq import Groq
+        client = Groq(api_key=_groq_key())
         prompt = (
-            "You are an elite French tutor. Return strict JSON with keys: "
-            "corrected, explanation, next_step. "
-            "Constraints: explanation <= 2 short sentences, next_step <= 1 sentence.\n\n"
-            f"CEFR: {req.cefr}\n"
+            "You are a French language tutor. A student made a mistake on a French exercise.\n"
+            "Return ONLY valid JSON (no markdown) with exactly these keys: corrected, explanation, next_step.\n"
+            "Rules:\n"
+            "- corrected: the correct French sentence or word\n"
+            "- explanation: 1-2 clear English sentences explaining the SPECIFIC mistake "
+            "(e.g. wrong verb conjugation, wrong gender, missing accent, wrong word order). "
+            "Be specific — name the exact grammar rule broken.\n"
+            "- next_step: 1 short encouraging sentence in English\n\n"
+            f"CEFR level: {req.cefr}\n"
             f"Exercise type: {req.q_type}\n"
-            f"Prompt: {req.prompt}\n"
-            f"Learner answer: {req.user_answer}\n"
+            f"Prompt shown to student: {req.prompt}\n"
+            f"Student's answer: {req.user_answer}\n"
             f"Expected answer: {req.expected_answer}\n"
-            f"Reference note: {req.note}\n"
+            f"Grammar note: {req.note}\n"
         )
-        data = _ai_json_or_none(prompt)
-        if data:
-            return {
-                "corrected": str(data.get("corrected", req.expected_answer)).strip() or req.expected_answer,
-                "explanation": str(data.get("explanation", "Good effort. Focus on word order and agreement.")).strip(),
-                "next_step": str(data.get("next_step", "Retry a similar sentence now.")).strip(),
-            }
+        resp = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1, max_tokens=220,
+        )
+        txt = resp.choices[0].message.content.strip()
+        txt = _re.sub(r'^```(?:json)?\s*', '', txt)
+        txt = _re.sub(r'\s*```$', '', txt)
+        data = json.loads(txt)
         return {
-            "corrected": req.expected_answer,
-            "explanation": "Good attempt. Compare your answer to the expected structure and watch agreement/order.",
-            "next_step": "Retry one similar sentence immediately to lock it in.",
+            "corrected":   str(data.get("corrected",   req.expected_answer)).strip() or req.expected_answer,
+            "explanation": str(data.get("explanation", "")).strip(),
+            "next_step":   str(data.get("next_step",   "")).strip(),
         }
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logging.warning(f"ai/mistake-feedback Groq error: {exc}")
+        return {
+            "corrected":   req.expected_answer,
+            "explanation": "Check the verb conjugation and noun agreements carefully — those are the most common sources of errors here.",
+            "next_step":   "You're making progress — try the next one!",
+        }
 
 
 @app.get("/api/ai/coach-plan")
@@ -1115,7 +1057,7 @@ def adaptive_event(req: AdaptiveEventRequest):
     try:
         import sqlite3
         _ensure_core_db()
-        with sqlite3.connect(get_db_path()) as db:
+        with sqlite3.connect("cato_mind.db") as db:
             db.execute(
                 """
                 INSERT INTO adaptive_events
@@ -1151,7 +1093,7 @@ def weak_skill_report():
     try:
         import sqlite3
         _ensure_core_db()
-        with sqlite3.connect(get_db_path()) as db:
+        with sqlite3.connect("cato_mind.db") as db:
             rows = db.execute(
                 """
                 SELECT skill_tag, COUNT(*) as attempts, SUM(CASE WHEN correct=0 THEN 1 ELSE 0 END) as wrong
@@ -1177,7 +1119,7 @@ def adaptive_review_queue(limit: int = 10):
     try:
         import sqlite3
         _ensure_core_db()
-        with sqlite3.connect(get_db_path()) as db:
+        with sqlite3.connect("cato_mind.db") as db:
             rows = db.execute(
                 """
                 SELECT prompt, q_type, skill_tag, MAX(created_at) as seen_at,
@@ -1210,7 +1152,7 @@ def adaptive_next_best_lesson():
         profile = _adaptive_profile()
         queue = adaptive_review_queue(limit=5).get("items", [])
         weak = weak_skill_report().get("skills", [])
-        with sqlite3.connect(get_db_path()) as db:
+        with sqlite3.connect("cato_mind.db") as db:
             row = db.execute("SELECT elo FROM learner WHERE id=1").fetchone()
         elo = int(row[0]) if row else 800
         if elo < 1000:
@@ -1238,150 +1180,47 @@ def adaptive_next_best_lesson():
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.get("/api/adaptive/mastery")
-def adaptive_get_mastery():
-    try:
-        import sqlite3
-        _ensure_core_db()
-        with sqlite3.connect(get_db_path()) as db:
-            row = db.execute(
-                "SELECT value FROM app_settings WHERE key='adaptive_mastery_v1' LIMIT 1"
-            ).fetchone()
-        if not row or not row[0]:
-            return {"mastery": {}}
-        data = json.loads(row[0])
-        return {"mastery": data if isinstance(data, dict) else {}}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@app.post("/api/adaptive/mastery")
-def adaptive_save_mastery(req: AdaptiveMasterySaveRequest):
-    try:
-        payload = req.mastery if isinstance(req.mastery, dict) else {}
-        # Keep payload bounded.
-        if len(payload) > 400:
-            items = list(payload.items())[:400]
-            payload = {k: v for k, v in items}
-        text = json.dumps(payload, separators=(",", ":"))
-        import sqlite3
-        _ensure_core_db()
-        with sqlite3.connect(get_db_path()) as db:
-            db.execute(
-                "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
-                ("adaptive_mastery_v1", text),
-            )
-        return {"ok": True, "count": len(payload)}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@app.get("/api/performance/summary")
-def performance_summary(days: int = 14):
-    try:
-        import sqlite3
-        _ensure_core_db()
-        d = max(1, min(days, 90))
-        with sqlite3.connect(get_db_path()) as db:
-            lesson_rows = db.execute(
-                """
-                SELECT source, COUNT(*) as n
-                FROM lesson_completion_log
-                WHERE datetime(created_at) >= datetime('now', ?)
-                GROUP BY source
-                """,
-                (f"-{d} day",),
-            ).fetchall()
-            drill_rows = db.execute(
-                """
-                SELECT q_type, COUNT(*) as attempts,
-                       SUM(CASE WHEN correct=1 THEN 1 ELSE 0 END) as correct_n,
-                       AVG(CASE WHEN response_ms > 0 THEN response_ms END) as avg_ms
-                FROM adaptive_events
-                WHERE datetime(created_at) >= datetime('now', ?)
-                GROUP BY q_type
-                ORDER BY attempts DESC
-                """,
-                (f"-{d} day",),
-            ).fetchall()
-            totals = db.execute(
-                """
-                SELECT COUNT(*) as attempts,
-                       SUM(CASE WHEN correct=1 THEN 1 ELSE 0 END) as correct_n
-                FROM adaptive_events
-                WHERE datetime(created_at) >= datetime('now', ?)
-                """,
-                (f"-{d} day",),
-            ).fetchone()
-
-        by_source = {r[0]: int(r[1] or 0) for r in lesson_rows}
-        attempts = int((totals or [0, 0])[0] or 0)
-        correct_n = int((totals or [0, 0])[1] or 0)
-        return {
-            "days": d,
-            "attempts": attempts,
-            "accuracy": round((correct_n / attempts), 4) if attempts else 0.0,
-            "by_source": by_source,
-            "by_type": [
-                {
-                    "q_type": r[0],
-                    "attempts": int(r[1] or 0),
-                    "accuracy": round((int(r[2] or 0) / max(int(r[1] or 1), 1)), 4),
-                    "avg_response_ms": int(float(r[3] or 0)),
-                }
-                for r in drill_rows
-            ],
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@app.get("/api/performance/trend")
-def performance_trend(days: int = 30):
-    try:
-        import sqlite3
-        _ensure_core_db()
-        d = max(3, min(days, 120))
-        with sqlite3.connect(get_db_path()) as db:
-            rows = db.execute(
-                """
-                SELECT date(created_at) as day,
-                       COUNT(*) as attempts,
-                       SUM(CASE WHEN correct=1 THEN 1 ELSE 0 END) as correct_n,
-                       AVG(CASE WHEN response_ms > 0 THEN response_ms END) as avg_ms
-                FROM adaptive_events
-                WHERE datetime(created_at) >= datetime('now', ?)
-                GROUP BY day
-                ORDER BY day ASC
-                """,
-                (f"-{d} day",),
-            ).fetchall()
-        points = [
-            {
-                "day": r[0],
-                "attempts": int(r[1] or 0),
-                "accuracy": round((int(r[2] or 0) / max(int(r[1] or 1), 1)), 4),
-                "avg_response_ms": int(float(r[3] or 0)),
-            }
-            for r in rows
-        ]
-        return {"days": d, "points": points}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
 @app.post("/api/learn/progress")
 def learn_progress(req: LearnProgressRequest):
     try:
         import sqlite3
+        from datetime import date
         _ensure_core_db()
         xp_gain = 12 if req.correct else 4
         elo_gain = 10 if req.correct else -4
-        with sqlite3.connect(get_db_path()) as db:
+        today = date.today().isoformat()
+        with sqlite3.connect("cato_mind.db") as db:
+            # Update learner XP + ELO
             row = db.execute("SELECT xp, elo FROM learner WHERE id=1").fetchone()
             xp = (row[0] if row else 0) + xp_gain
             elo = max(700, min(2200, (row[1] if row else 800) + elo_gain))
             db.execute("UPDATE learner SET xp=?, elo=? WHERE id=1", (xp, elo))
+
+            # Update daily XP and streak
+            ss = db.execute(
+                "SELECT daily_goal_xp, current_streak, longest_streak, last_active_date, xp_today, xp_today_date FROM streak_state WHERE id=1"
+            ).fetchone()
+            if ss:
+                goal_xp, cur_streak, long_streak, last_active, xp_today, xp_today_date = ss
+                # Reset daily XP if it's a new day
+                if xp_today_date != today:
+                    xp_today = 0
+                xp_today += xp_gain
+                # Update streak: count today as active if this is first activity of day
+                if last_active != today:
+                    from datetime import date as d, timedelta
+                    yesterday = (d.today() - timedelta(days=1)).isoformat()
+                    if last_active == yesterday:
+                        cur_streak += 1  # continued streak
+                    else:
+                        cur_streak = 1   # reset or brand new
+                    long_streak = max(long_streak, cur_streak)
+                    last_active = today
+                db.execute(
+                    """UPDATE streak_state SET xp_today=?, xp_today_date=?,
+                       current_streak=?, longest_streak=?, last_active_date=? WHERE id=1""",
+                    (xp_today, today, cur_streak, long_streak, last_active)
+                )
         return {"ok": True, "xp_gain": xp_gain, "elo_gain": elo_gain}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -1392,7 +1231,7 @@ def c1_status():
     try:
         import sqlite3
         _ensure_core_db()
-        with sqlite3.connect(get_db_path()) as db:
+        with sqlite3.connect("cato_mind.db") as db:
             row = db.execute("SELECT elo FROM learner WHERE id=1").fetchone()
         elo = int(row[0]) if row else 800
         profile = _adaptive_profile()
@@ -1420,7 +1259,7 @@ def c2_status():
     try:
         import sqlite3
         _ensure_core_db()
-        with sqlite3.connect(get_db_path()) as db:
+        with sqlite3.connect("cato_mind.db") as db:
             row = db.execute("SELECT elo FROM learner WHERE id=1").fetchone()
         elo = int(row[0]) if row else 800
         profile = _adaptive_profile()
@@ -1448,7 +1287,7 @@ def cefr_missions():
     try:
         import sqlite3
         _ensure_core_db()
-        with sqlite3.connect(get_db_path()) as db:
+        with sqlite3.connect("cato_mind.db") as db:
             row = db.execute("SELECT elo FROM learner WHERE id=1").fetchone()
         elo = int(row[0]) if row else 800
         checkpoints = _load_checkpoints()
@@ -1490,7 +1329,7 @@ def run_cefr_checkpoint(level: str, req: Optional[CheckpointSubmitRequest] = Non
         required = _checkpoint_required_pct(level)
         import sqlite3
         _ensure_core_db()
-        with sqlite3.connect(get_db_path()) as db:
+        with sqlite3.connect("cato_mind.db") as db:
             fail_row = db.execute(
                 "SELECT value FROM app_settings WHERE key=?",
                 (f"checkpoint_fail_{level.lower()}",),
@@ -1517,7 +1356,7 @@ def run_cefr_checkpoint(level: str, req: Optional[CheckpointSubmitRequest] = Non
             if passed else
             f"Checkpoint not passed yet. Do targeted review, then retry {level}."
         )
-        with sqlite3.connect(get_db_path()) as db:
+        with sqlite3.connect("cato_mind.db") as db:
             db.execute(
                 "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
                 (f"checkpoint_{level.lower()}", "passed" if passed else "failed"),
@@ -1554,7 +1393,7 @@ def run_unit_checkpoint(unit_id: str, req: Optional[CheckpointSubmitRequest] = N
         passed = score >= required
         import sqlite3
         _ensure_core_db()
-        with sqlite3.connect(get_db_path()) as db:
+        with sqlite3.connect("cato_mind.db") as db:
             db.execute(
                 "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
                 (f"unit_checkpoint_{unit_id}", "passed" if passed else "failed"),
@@ -1653,7 +1492,7 @@ def onboarding_status():
         try:
             _ensure_core_db()
             import sqlite3
-            with sqlite3.connect(get_db_path()) as db:
+            with sqlite3.connect("cato_mind.db") as db:
                 row = db.execute(
                     "SELECT value FROM app_settings WHERE key='onboarded' LIMIT 1"
                 ).fetchone()
@@ -1662,20 +1501,13 @@ def onboarding_status():
             return {"onboarded": False}
 
 
-from placement_quiz import get_placement_quiz
-
-@app.get("/api/placement-quiz")
-def get_placement_quiz_endpoint():
-    return get_placement_quiz()
-
-
 @app.post("/api/onboarding/complete")
 def complete_onboarding(req: OnboardingRequest):
     try:
         _ensure_core_db()
         import sqlite3
 
-        with sqlite3.connect(get_db_path()) as db:
+        with sqlite3.connect("cato_mind.db") as db:
             elo = 800 + (req.placement_score * 80)
             db.execute("UPDATE learner SET name=?, elo=? WHERE id=1",
                        (req.name, min(elo, 1200)))
@@ -1708,7 +1540,7 @@ def get_settings():
     try:
         _ensure_core_db()
         import sqlite3
-        with sqlite3.connect(get_db_path()) as db:
+        with sqlite3.connect("cato_mind.db") as db:
             rows = db.execute("SELECT key, value FROM app_settings").fetchall()
         return {"settings": {r[0]: r[1] for r in rows}}
     except Exception as exc:
@@ -1720,7 +1552,7 @@ def save_settings(req: SettingRequest):
     try:
         _ensure_core_db()
         import sqlite3
-        with sqlite3.connect(get_db_path()) as db:
+        with sqlite3.connect("cato_mind.db") as db:
             db.execute(
                 "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
                 (req.key, req.value),
@@ -1732,190 +1564,108 @@ def save_settings(req: SettingRequest):
 
 # ── Word lookup ───────────────────────────────────────────────────────────────
 
+def _ai_translate_word(word: str) -> dict:
+    """
+    Call Groq (llama-3.3-70b) to translate a word bidirectionally.
+    Auto-detects whether the input is French or English and translates accordingly.
+    Returns: french, english, direction ('fr-en' or 'en-fr'), part_of_speech, note, is_cognate.
+    """
+    import json, re
+    key = _groq_key()
+    if not key:
+        return {"french": word, "english": "—", "direction": "fr-en", "part_of_speech": None, "note": None, "is_cognate": False}
+    try:
+        from groq import Groq
+        client = Groq(api_key=key)
+        prompt = (
+            f'You are a bilingual French/English dictionary expert.\n'
+            f'The word to look up is: "{word}"\n'
+            'Detect whether this word is French or English, then provide the translation in the other language.\n'
+            'Respond with ONLY valid JSON (no markdown, no code fences):\n'
+            '{{"french": "<the French word>", "english": "<the English meaning>", '
+            '"direction": "<fr-en or en-fr>", '
+            '"part_of_speech": "<noun|verb|adjective|adverb|preposition|article|pronoun|conjunction|other>", '
+            '"note": "<one short grammar/usage note max 12 words, or null>", "is_cognate": <true|false>}}\n'
+            'direction must be "fr-en" if the input word was French, "en-fr" if it was English.\n'
+            'is_cognate means the French and English words look/sound similar and share a meaning.'
+        )
+        resp = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_tokens=140,
+        )
+        text = resp.choices[0].message.content.strip()
+        text = re.sub(r'^```(?:json)?\s*', '', text)
+        text = re.sub(r'\s*```$', '', text)
+        data = json.loads(text)
+        return {
+            "french":         data.get("french", word),
+            "english":        data.get("english", "—"),
+            "direction":      data.get("direction", "fr-en"),
+            "part_of_speech": data.get("part_of_speech"),
+            "note":           data.get("note"),
+            "is_cognate":     bool(data.get("is_cognate", False)),
+        }
+    except Exception as exc:
+        logging.warning(f"Groq word lookup failed for '{word}': {exc}")
+        return {"french": word, "english": "—", "direction": "fr-en", "part_of_speech": None, "note": None, "is_cognate": False}
+
+
 @app.get("/api/word/{word}")
 def lookup_word(word: str):
     """
-    Tap-to-translate: look up a French word.
-    Returns translation, IPA hint, and whether it's a known cognate.
+    Hover-to-translate: bidirectional French↔English lookup.
+    Checks vocabulary DB for both French and English columns, then falls back to Groq AI.
     """
+    import sqlite3
+    word_lower = word.lower().strip(".,!?;:'\"«»—-")
+    if not word_lower or len(word_lower) < 2:
+        return {"french": word, "english": "—", "direction": "fr-en", "found": False}
+
+    # Try local DB — check both French and English columns
+    row = None
+    direction = "fr-en"
     try:
-        import sqlite3
-        word_lower = word.lower().strip(".,!?;:'"«»—")
-        with sqlite3.connect(get_db_path()) as db:
+        with sqlite3.connect("cato_mind.db") as db:
+            # French → English lookup
             row = db.execute(
                 "SELECT french, english, latin_root, is_cognate FROM vocabulary WHERE LOWER(french)=? LIMIT 1",
                 (word_lower,)
             ).fetchone()
-        if row:
-            return {"french": row[0], "english": row[1],
-                    "note": row[2], "is_cognate": bool(row[3]), "found": True}
-        # Not in DB — ask Gemini for a quick translation
-        return {"french": word, "english": "—", "note": None,
-                "is_cognate": False, "found": False}
-    except Exception as exc:
-        return {"french": word, "english": "—", "found": False}
+            if not row:
+                # English → French lookup
+                row = db.execute(
+                    "SELECT french, english, latin_root, is_cognate FROM vocabulary WHERE LOWER(english)=? LIMIT 1",
+                    (word_lower,)
+                ).fetchone()
+                if row:
+                    direction = "en-fr"
+    except Exception:
+        pass
 
-
-# ── Pattern Diagnosis ─────────────────────────────────────────────────────────
-
-@app.get("/api/adaptive/pattern-diagnosis")
-def pattern_diagnosis():
-    """
-    AI-powered analysis of the learner's mistake patterns.
-    Surfaces specific grammatical diagnoses instead of raw skill tags.
-    """
-    try:
-        import sqlite3
-        _ensure_core_db()
-        with sqlite3.connect(get_db_path()) as db:
-            rows = db.execute(
-                """
-                SELECT q_type, skill_tag, prompt, user_answer, expected_answer
-                FROM adaptive_events
-                WHERE correct = 0
-                ORDER BY id DESC
-                LIMIT 60
-                """,
-            ).fetchall()
-
-        if len(rows) < 3:
-            return {
-                "patterns": [],
-                "headline": "Keep practising — patterns will appear after a few mistakes.",
-                "overall_advice": "",
-            }
-
-        mistakes = [
-            {
-                "type": r[0],
-                "skill": r[1],
-                "prompt": r[2],
-                "yours": r[3],
-                "correct": r[4],
-            }
-            for r in rows[:20]
-        ]
-
-        ai_prompt = (
-            "You are a French language expert diagnosing a learner's error patterns. "
-            "Return ONLY strict JSON with keys: headline (str), overall_advice (str), "
-            "patterns (array of 1-3 objects with keys: tag, description, tip). "
-            "description = 1 sentence naming the grammatical error pattern. "
-            "tip = 1 actionable sentence the learner can act on immediately.\n\n"
-            f"Recent mistakes (type / skill / prompt / learner-answer / correct-answer):\n"
-            f"{json.dumps(mistakes, ensure_ascii=False)}"
-        )
-
-        data = _ai_json_or_none(ai_prompt)
-        if data and isinstance(data.get("patterns"), list):
-            return {
-                "patterns": [
-                    {
-                        "tag": str(p.get("tag", "general")).strip(),
-                        "description": str(p.get("description", "")).strip(),
-                        "tip": str(p.get("tip", "")).strip(),
-                    }
-                    for p in data["patterns"][:3]
-                    if p.get("description")
-                ],
-                "headline": str(data.get("headline", "Your weak spots:")).strip(),
-                "overall_advice": str(data.get("overall_advice", "")).strip(),
-            }
-
-        # Fallback: simple frequency grouping
-        by_skill: dict = {}
-        for r in rows:
-            by_skill[r[1]] = by_skill.get(r[1], 0) + 1
-        top = sorted(by_skill.items(), key=lambda x: -x[1])[:3]
+    if row:
         return {
-            "patterns": [
-                {
-                    "tag": t,
-                    "description": f"{c} error(s) logged under '{t}'.",
-                    "tip": f"Drill more {t} exercises to build the pattern.",
-                }
-                for t, c in top
-            ],
-            "headline": "Your weak spots:",
-            "overall_advice": "Focus on the most frequent error first.",
+            "french":         row[0],
+            "english":        row[1],
+            "part_of_speech": None,
+            "note":           row[2],
+            "is_cognate":     bool(row[3]),
+            "direction":      direction,
+            "found":          True,
         }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
 
-
-# ── AI-Generated Practice Questions ──────────────────────────────────────────
-
-class GeneratePracticeRequest(BaseModel):
-    cefr: str = "A1"
-    skill_tag: str = "syntax"
-    examples: list = []
-    count: int = 5
-
-
-@app.post("/api/ai/generate-practice")
-def generate_practice(req: GeneratePracticeRequest):
-    """
-    Generate novel drill questions targeting a specific weak skill.
-    Returns DrillQ-compatible objects (arrange or translate).
-    """
-    try:
-        import re
-        ex_lines = "\n".join(
-            f"  • Prompt: {e.get('prompt', '')} | Answer: {e.get('answer', '')}"
-            for e in (req.examples or [])[:5]
-        ) or "  (no examples — use common French phrases)"
-
-        ai_prompt = (
-            f"Generate exactly {req.count} French drill questions for a {req.cefr} learner.\n"
-            f"Target grammar skill: {req.skill_tag}\n"
-            f"Example questions from this skill:\n{ex_lines}\n\n"
-            f"Rules:\n"
-            f"- Use different vocabulary from the examples but the SAME grammatical pattern.\n"
-            f"- Keep difficulty appropriate for {req.cefr}.\n"
-            f"- Mix 'arrange' and 'translate' types (at least 2 of each if count >= 4).\n"
-            f"- For arrange: prompt = English sentence to reconstruct, answer = French sentence.\n"
-            f"- For translate: prompt = 'Translate: \"<English>\"', answer = French sentence.\n"
-            f"Return ONLY a JSON array: "
-            f'[{{"type":"arrange"|"translate","prompt":"...","answer":"...","note":"brief grammar tip"}}]'
-        )
-
-        data = _ai_json_or_none(ai_prompt)
-        if not isinstance(data, list):
-            return {"questions": []}
-
-        questions = []
-        for item in data[: req.count + 2]:
-            if not isinstance(item, dict):
-                continue
-            q_type = str(item.get("type", "translate")).strip()
-            prompt = str(item.get("prompt", "")).strip()
-            answer = str(item.get("answer", "")).strip()
-            note   = str(item.get("note", "")).strip()
-            if not prompt or not answer:
-                continue
-            q: dict = {
-                "type": q_type if q_type in ("arrange", "translate") else "translate",
-                "cefr": req.cefr,
-                "unitId": f"{req.cefr.lower()}-ai-generated",
-                "lessonType": "grammar_focus",
-                "prompt": prompt,
-                "answer": answer,
-                "note": note,
-                "isGenerated": True,
-            }
-            if q["type"] == "arrange":
-                words = re.sub(r"([!?.,;:])", r" \1 ", answer)
-                q["words"] = [w for w in words.split() if w]
-                # Ensure direction field absent for translate (not needed for arrange)
-            else:
-                q["direction"] = "en-fr"
-            questions.append(q)
-            if len(questions) >= req.count:
-                break
-
-        return {"questions": questions}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    # Not in DB — use Groq AI (auto-detects language and translates bidirectionally)
+    ai = _ai_translate_word(word_lower)
+    return {
+        "french":         ai["french"],
+        "english":        ai["english"],
+        "part_of_speech": ai["part_of_speech"],
+        "note":           ai["note"],
+        "is_cognate":     ai["is_cognate"],
+        "direction":      ai["direction"],
+        "found":          ai["english"] != "—",
+    }
 
 
 # ── Morning brief ─────────────────────────────────────────────────────────────
@@ -1934,12 +1684,161 @@ async def generate_brief(background_tasks: BackgroundTasks):
 
 # ── Progress ──────────────────────────────────────────────────────────────────
 
+@app.post("/api/lesson/complete")
+def lesson_complete(req: dict = Body(default={})):
+    """Record a completed lesson round (called by frontend when unit advances)."""
+    try:
+        import sqlite3
+        _ensure_core_db()
+        unit_id  = str(req.get("unit_id", "general"))
+        cefr     = str(req.get("cefr", "A1")).upper()
+        answered = int(req.get("questions_answered", 0))
+        accuracy = int(req.get("accuracy_pct", 0))
+        xp_earned = int(req.get("xp_earned", 0))
+        with sqlite3.connect("cato_mind.db") as db:
+            db.execute(
+                """INSERT INTO lesson_log (unit_id, cefr, questions_answered, accuracy_pct, xp_earned)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (unit_id, cefr, answered, accuracy, xp_earned)
+            )
+        return {"ok": True}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/memory")
+def get_memory():
+    """
+    Returns a 'welcome back' memory card summarising the learner's progress:
+    streak, XP today, last lesson, total lessons, weak skill, and a greeting.
+    """
+    try:
+        import sqlite3
+        from datetime import date, datetime
+        _ensure_core_db()
+        with sqlite3.connect("cato_mind.db") as db:
+            learner_row = db.execute(
+                "SELECT name, elo, xp FROM learner WHERE id=1"
+            ).fetchone()
+            ss = db.execute(
+                "SELECT daily_goal_xp, current_streak, longest_streak, xp_today, last_active_date FROM streak_state WHERE id=1"
+            ).fetchone()
+            last_lesson = db.execute(
+                "SELECT unit_id, cefr, accuracy_pct, xp_earned, finished_at FROM lesson_log ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            total_lessons = db.execute("SELECT COUNT(*) FROM lesson_log").fetchone()[0]
+            total_answers = db.execute("SELECT COUNT(*) FROM adaptive_events").fetchone()[0]
+            weak_skill = db.execute(
+                """SELECT skill_tag, CAST(SUM(CASE WHEN correct=0 THEN 1 ELSE 0 END) AS FLOAT)/COUNT(*) as err
+                   FROM adaptive_events GROUP BY skill_tag HAVING COUNT(*) >= 3
+                   ORDER BY err DESC LIMIT 1"""
+            ).fetchone()
+
+        name       = learner_row[0] if learner_row else "Learner"
+        elo        = learner_row[1] if learner_row else 800
+        total_xp   = learner_row[2] if learner_row else 0
+        goal_xp    = ss[0] if ss else 50
+        streak     = ss[1] if ss else 0
+        longest    = ss[2] if ss else 0
+        xp_today   = ss[3] if ss else 0
+        last_active = ss[4] if ss else None
+
+        # Build greeting
+        today = date.today().isoformat()
+        if last_active == today:
+            greeting = f"Welcome back, {name}! Keep your {streak}-day streak going 🔥"
+        elif streak == 0 and total_answers == 0:
+            greeting = f"Bonjour, {name}! Ready to start your French journey?"
+        elif streak > 0:
+            greeting = f"Bienvenue, {name}! Your {streak}-day streak is waiting 💪"
+        else:
+            greeting = f"Welcome back, {name}! Let's get back on track."
+
+        result = {
+            "greeting":       greeting,
+            "name":           name,
+            "streak":         streak,
+            "longest_streak": longest,
+            "xp_today":       xp_today,
+            "daily_goal_xp":  goal_xp,
+            "goal_pct":       min(100, int((xp_today / max(goal_xp, 1)) * 100)),
+            "total_xp":       total_xp,
+            "elo":            elo,
+            "total_lessons":  int(total_lessons or 0),
+            "total_answers":  int(total_answers or 0),
+        }
+        if last_lesson:
+            result["last_lesson"] = {
+                "unit_id":    last_lesson[0],
+                "cefr":       last_lesson[1],
+                "accuracy":   last_lesson[2],
+                "xp_earned":  last_lesson[3],
+                "finished_at": last_lesson[4],
+            }
+        if weak_skill:
+            result["top_weak_skill"] = {
+                "skill": weak_skill[0],
+                "error_rate": round(float(weak_skill[1]), 2),
+            }
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/units/completed")
+def get_completed_units():
+    """Return the set of unit/grammar IDs the learner has completed."""
+    try:
+        import sqlite3
+        _ensure_core_db()
+        with sqlite3.connect("cato_mind.db") as db:
+            rows = db.execute(
+                "SELECT unit_id, kind FROM completed_units"
+            ).fetchall()
+        units   = [r[0] for r in rows if r[1] == 'unit']
+        grammar = [r[0] for r in rows if r[1] == 'grammar']
+        return {"units": units, "grammar": grammar}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/units/{unit_id}/complete")
+def mark_unit_completed(unit_id: str, req: dict = Body(default={})):
+    """Persist a completed unit (or grammar node)."""
+    try:
+        import sqlite3
+        _ensure_core_db()
+        kind = str(req.get("kind", "unit"))
+        if kind not in ("unit", "grammar"):
+            kind = "unit"
+        with sqlite3.connect("cato_mind.db") as db:
+            db.execute(
+                "INSERT OR IGNORE INTO completed_units (unit_id, kind) VALUES (?, ?)",
+                (unit_id, kind),
+            )
+        return {"ok": True, "unit_id": unit_id, "kind": kind}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.delete("/api/units/{unit_id}/complete")
+def reset_unit_completion(unit_id: str):
+    try:
+        import sqlite3
+        _ensure_core_db()
+        with sqlite3.connect("cato_mind.db") as db:
+            db.execute("DELETE FROM completed_units WHERE unit_id = ?", (unit_id,))
+        return {"ok": True}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.get("/api/progress")
 def get_progress():
     try:
         from elo_engine import get_elo_history
         import sqlite3
-        with sqlite3.connect(get_db_path()) as db:
+        with sqlite3.connect("cato_mind.db") as db:
             sessions = db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
             vocab_mastered = db.execute(
                 "SELECT COUNT(*) FROM vocabulary WHERE sm2_reps >= 3"
@@ -1960,7 +1859,7 @@ def get_progress():
 
 def _table_exists(name: str) -> bool:
     import sqlite3
-    with sqlite3.connect(get_db_path()) as db:
+    with sqlite3.connect("cato_mind.db") as db:
         row = db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,)
         ).fetchone()
