@@ -362,7 +362,7 @@ const a1u8Practice: LPQ[] = [
   t(A8, 'fr-en', 'Il fait froid.',                                      'It is cold',                            "'Faire' (to make/do) carries all basic weather sensations. The impersonal 'il' is not 'he' — it's the world."),
   t(A8, 'en-fr', 'It is beautiful in summer.',                         'Il fait beau en été',                   "'En' before été because it starts with a vowel. 'Au' is reserved for le printemps only."),
   t(A8, 'fr-en', 'Il y a du vent en automne.',                         'It is windy in autumn',                 "'Il y a' = there is/are. You are literally saying 'There is some wind' — wind is a thing, not a quality."),
-  m(A8, "How do you ask 'What is the weather like?'",                   'Quel temps fait-il ?',                  ['Comment est le ciel ?','Quel temps fait-il ?','Il fait quel temps ?','Est-ce qu'il est beau ?'], "'Temps' means both weather AND time — to the French, the shifting sky and the passing hours are one concept."),
+  m(A8, "How do you ask 'What is the weather like?'",                   'Quel temps fait-il ?',                  ['Comment est le ciel ?','Quel temps fait-il ?','Il fait quel temps ?',"Est-ce qu'il est beau ?"], "'Temps' means both weather AND time — to the French, the shifting sky and the passing hours are one concept."),
   m(A8, "Which season uses the preposition 'au'?",                      'le printemps',                          ["l'été","l'automne","l'hiver",'le printemps'], "Printemps starts with a consonant and is masculine → 'au'. Été, automne, hiver all start with vowels → 'en'."),
   a(A8, "Build: 'It is sunny'",                                         'Il fait du soleil',                     ['Il','fait','du','soleil'], "'Du soleil' uses the partitive article — some sunshine. Soleil is masculine."),
   a(A8, "Build: 'In winter it snows'",                                  'En hiver il neige',                     ['En','hiver','il','neige'], "'Neige' shares its root with 'niveous' (snow-white). 'Il neige' exists only in the 'il' form."),
@@ -398,15 +398,103 @@ const a1u8Phrases: LessonPhrase[] = [
 ]
 
 // ─────────────────────────────────────────────────────────────────────────────
+// A1 Unit 9 — "At the Market"
+// ─────────────────────────────────────────────────────────────────────────────
+const A9 = 'a1-u9'
+const a1u9Practice: LPQ[] = [
+  t(A9, 'fr-en', "C'est combien le kilo ?",                            'How much is it per kilo',                "The most useful market phrase. Pair with 'le kilo' or 'la pièce' to specify per-unit pricing."),
+  t(A9, 'en-fr', 'I would like a baguette.',                           'Je voudrais une baguette',               "'Je voudrais' = conditional of vouloir. Far more polite than 'je veux' (I want), which sounds blunt."),
+  t(A9, 'fr-en', "Une livre de tomates s'il vous plaît.",              'Half a kilo of tomatoes please',         "'Une livre' = 500g in France (a metric pound), not the British 454g pound. Always 500g flat."),
+  m(A9, "Which partitive article goes with 'pommes' (apples)?",         'des',                                    ['du','de la','des',"de l'"], "'Des' for plural nouns. Use du (m sing), de la (f sing), de l' (vowel), des (plural)."),
+  m(A9, "Which is the polite way to ask for something at a shop?",      'Je voudrais',                            ['Je veux','Donnez-moi','Je voudrais','Apporte'], "'Je veux' is rude in shops. 'Donnez-moi' is a command. 'Je voudrais' is the polished standard."),
+  a(A9, "Build: 'I would like two croissants please'",                  "Je voudrais deux croissants s'il vous plaît", ['Je','voudrais','deux','croissants',"s'il",'vous','plaît'], "'S'il vous plaît' literally = 'if it pleases you'. The vous form is standard with strangers."),
+  a(A9, "Build: 'It is too expensive'",                                 "C'est trop cher",                        ["C'est",'trop','cher'], "'Trop' = too (excessive). 'Très' = very. Don't confuse them — trop carries criticism."),
+  f(A9, 'Je voudrais ___ fromage.',                                     'du',                                     "Fromage is masculine singular → du. Partitive article means 'some' — required in French even when English drops it."),
+  f(A9, "C'est combien ___ kilo ?",                                     'le',                                     "'Le kilo' = per kilo. The article specifies a unit price — same with 'la pièce' (each)."),
+  e(A9, 'Je veux pain.',                                                'Je voudrais du pain',                    "Two errors: 'je veux' is too direct, and French requires the partitive 'du' before unspecified bread."),
+  e(A9, 'Je voudrais le pommes.',                                       'Je voudrais des pommes',                 "Use 'des' for unspecified plural quantities. 'Le pommes' is grammatically impossible — wrong gender AND wrong number."),
+  l(A9, 'Une baguette coûte un euro.',                                 'One euro',                                "A standard baguette price in France is around €1–€1.20. Ask 'C\'est combien ?' to check."),
+  l(A9, 'Trois cents grammes de fromage.',                             'Three hundred grams of cheese',          "Note: after a quantity expression (cent grammes, un kilo, une livre), use 'de' alone — never 'du' or 'des'."),
+  t(A9, 'fr-en', 'Translate: "fraise, pomme, tomate, fromage"',        'strawberry, apple, tomato, cheese',      "Build a market vocab map. Most fruits and vegetables in French are feminine."),
+  t(A9, 'fr-en', "Translate: \"du, de la, des, de l'\"",                "some (masc), some (fem), some (plural), some (vowel-start)", "The four faces of the partitive article — match by gender, number, and the next sound."),
+]
+
+const a1u9Test: LPQ[] = [
+  t(A9, 'en-fr', 'How much for the cheese?',                            "C'est combien le fromage",              "The 'le' specifies you're asking the price of the cheese as a category, not a specific piece."),
+  t(A9, 'fr-en', 'Je voudrais une livre de pommes.',                   'I would like half a kilo of apples',     "'Une livre de' = 500g of. Note the 'de' (not 'des') after a quantity word."),
+  m(A9, "How do you say 'It's too expensive'?",                        "C'est trop cher",                        ["C'est trop cher","C'est très bon","C'est pas mal","C'est cher trop"], "'Trop' must come before the adjective. 'Cher trop' is wrong word order."),
+  m(A9, "Which is the partitive for water (l'eau, feminine)?",          "de l'",                                  ['du','de la','des',"de l'"], "Eau starts with a vowel → de l'. The l' contraction prevents the awkward 'de eau'."),
+  a(A9, "Build: 'I would like some bread and some cheese'",             'Je voudrais du pain et du fromage',     ['Je','voudrais','du','pain','et','du','fromage'], "Both pain and fromage are masculine → both take 'du'. The partitive must be repeated."),
+  f(A9, 'Donnez-moi ___ confiture.',                                   'de la',                                  "Confiture is feminine singular → de la. (For polite contexts, prefer 'Je voudrais de la confiture'.)"),
+  e(A9, "C'est combien la kilo ?",                                     "C'est combien le kilo ?",                "Kilo is masculine → 'le kilo'. 'La kilo' is a beginner gender mistake."),
+  e(A9, "Je voudrais des l'eau.",                                       "Je voudrais de l'eau",                  "Eau is singular and starts with a vowel → de l'. 'Des l'eau' breaks two rules at once."),
+  l(A9, 'Ça fait dix euros.',                                           'Ten euros',                              "'Ça fait' = that comes to. Standard phrase at checkout — the cashier's way of giving the total."),
+  t(A9, 'fr-en', 'Translate: "le marché, la boulangerie, la fromagerie, la poissonnerie"', 'the market, the bakery, the cheese shop, the fish shop', "Most -erie shops are feminine. Each French town has a network of these specialized food shops."),
+]
+
+const a1u9Phrases: LessonPhrase[] = [
+  { fr: 'Au marché',          en: 'At the market',         note: "Open-air markets are the heart of French food culture — most towns have one twice a week." },
+  { fr: "C'est combien ?",    en: 'How much is it?',       note: "The most useful market phrase. Pair with 'le kilo' or 'la pièce' for unit pricing." },
+  { fr: 'Une livre',          en: 'Half a kilo (500g)',    note: "Literally 'a pound', but the French livre is exactly 500g — a clean metric round number." },
+  { fr: 'Du / de la / des',   en: 'Some (m / f / plural)', note: "The partitive article. Required in French even when English drops it: 'I want bread' = 'Je veux DU pain'." },
+  { fr: 'Je voudrais',        en: 'I would like',          note: "Conditional of vouloir. The polite standard at any French shop or restaurant — never use 'je veux'." },
+]
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A1 Unit 10 — "À bientôt!"
+// ─────────────────────────────────────────────────────────────────────────────
+const AA = 'a1-u10'
+const a1u10Practice: LPQ[] = [
+  t(AA, 'fr-en', 'À bientôt !',                                         'See you soon',                          "Literally 'until soon'. The standard warm goodbye between friends, colleagues, and acquaintances."),
+  t(AA, 'en-fr', 'Have a good trip!',                                   'Bon voyage',                             "'Bon' + activity is a French formula: bon appétit, bon courage, bon weekend, bon voyage."),
+  t(AA, 'fr-en', 'À demain matin.',                                    'See you tomorrow morning',               "'À' + time word builds dozens of farewells: à lundi, à ce soir, à plus tard, à jeudi."),
+  m(AA, "Which means 'See you tonight'?",                              'À ce soir',                              ['À demain','À bientôt','À ce soir','À plus tard'], "'Ce soir' = tonight (literally 'this evening'). 'À ce soir' is used when parting earlier in the day."),
+  m(AA, "How do you say 'I'm going to France'?",                       'Je vais en France',                       ['Je vais à France','Je vais en France','Je vais au France','Je vais France'], "Feminine countries take 'en'. France, Italie, Espagne, Allemagne are all feminine → 'en France', 'en Italie'."),
+  a(AA, "Build: 'Have a good weekend!'",                                'Bon weekend',                            ['Bon','weekend'], "French has fully adopted 'le weekend' from English. 'Bon weekend' is said every Friday afternoon across France."),
+  a(AA, "Build: 'I am going to Canada in summer'",                     'Je vais au Canada en été',              ['Je','vais','au','Canada','en','été'], "Canada is masculine → au (à + le). 'En été' for summer (vowel start). Two prepositions, two rules."),
+  f(AA, 'Je vais ___ Italie cet été.',                                 'en',                                    "Italie is feminine → 'en'. The pattern: en + feminine country, au + masculine country, aux + plural country."),
+  f(AA, 'À ___ semaine prochaine !',                                   'la',                                    "'La semaine prochaine' = next week. The article 'la' is mandatory — a fixed expression."),
+  e(AA, 'Je vais à France.',                                            'Je vais en France',                     "Never 'à' + country. Use 'en' for feminine, 'au' for masculine, 'aux' for plural countries."),
+  e(AA, 'Je vais en Canada.',                                           'Je vais au Canada',                     "Canada is masculine (le Canada) → au, not en. Easy memory hook: most countries ending in -a are feminine, but Canada bucks the trend."),
+  l(AA, 'Bon voyage et à bientôt.',                                     'Have a good trip and see you soon',     "The classic French send-off: a wish for the journey, plus the promise of reunion."),
+  l(AA, 'Je pars en vacances demain.',                                 'I am leaving on holiday tomorrow',       "'Partir en vacances' = to leave on holiday. The French take their summer holidays very seriously — many businesses close in August."),
+  t(AA, 'fr-en', 'Translate: "à demain, à bientôt, à ce soir, à plus tard"', 'see you tomorrow, see you soon, see you tonight, see you later', "All built from 'à' + a time word. Memorize the pattern, generate dozens of farewells."),
+  t(AA, 'fr-en', "Translate: \"le départ, l'arrivée, le voyage, les vacances\"", 'departure, arrival, trip, holidays', "'Vacances' is always plural in French — you cannot have just one vacance."),
+]
+
+const a1u10Test: LPQ[] = [
+  t(AA, 'en-fr', 'See you next week!',                                  'À la semaine prochaine',                 "'À' + 'la semaine prochaine'. Note both the article 'la' and the position of 'prochaine' AFTER the noun."),
+  t(AA, 'fr-en', 'Faites bon voyage.',                                  'Have a safe trip',                       "'Faites' is the vous-form imperative of faire — formal, used with strangers or in professional contexts."),
+  m(AA, "Which country is masculine and uses 'au'?",                   'le Canada',                              ['la France','le Canada',"l'Italie","l'Espagne"], "Canada is the famous masculine exception. Most -e ending countries are feminine; Canada is not."),
+  m(AA, "How do you wish someone strength/courage for a hard task?",   'Bon courage',                            ['Bonne chance','Bon courage','Bonne journée','Bon appétit'], "'Bonne chance' = good luck (random). 'Bon courage' = strength for a hard task. Different scenarios."),
+  a(AA, "Build: 'See you tomorrow at the train station'",              'À demain à la gare',                     ['À','demain','à','la','gare'], "Two 'à' in a row — first for the time (à demain), second for the place (à la gare)."),
+  f(AA, 'Je voyage ___ Espagne en mai.',                              'en',                                    "Espagne is feminine → en. May is just 'en mai' (no article needed for months)."),
+  e(AA, 'Bon voyage à toi, à plus tarde.',                              'Bon voyage à toi, à plus tard',         "'À plus tard' — no 'e' on tard. Common spelling slip influenced by Spanish 'tarde'."),
+  e(AA, 'À la lundi !',                                                 'À lundi !',                              "Days of the week never take an article in farewells. 'À lundi', 'À mardi', 'À jeudi' — never 'à le lundi'."),
+  l(AA, 'Je reviens dans deux semaines.',                              'I will be back in two weeks',            "'Dans + duration' = in X amount of time (future). 'Il y a + duration' = X ago (past)."),
+  t(AA, 'fr-en', 'Translate: "en France, au Canada, en Italie, aux États-Unis"', 'in France, in Canada, in Italy, in the United States', "The four prepositions: en (fem), au (masc), aux (plural). Master these and you can talk about any country."),
+]
+
+const a1u10Phrases: LessonPhrase[] = [
+  { fr: 'À bientôt',           en: 'See you soon',          note: "Literally 'until soon'. The warm, default goodbye between friends and colleagues across France." },
+  { fr: 'Bon voyage',          en: 'Have a good trip',     note: "'Bon' + activity = a French wishing formula: bon appétit, bon courage, bon weekend, bon voyage, bonne journée." },
+  { fr: 'À demain',            en: 'See you tomorrow',     note: "'À' + time word builds dozens of farewells: à lundi, à ce soir, à plus tard, à jeudi, à la prochaine." },
+  { fr: 'Je vais en France',   en: 'I am going to France', note: "Feminine countries take 'en' (en France, en Italie). Masculine countries take 'au' (au Canada, au Japon). Plural takes 'aux' (aux États-Unis)." },
+  { fr: 'Faites bon voyage',   en: 'Have a safe trip (formal)', note: "The vous-form imperative — used with strangers or in professional contexts. The tu-form is 'fais bon voyage'." },
+]
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Export
 // ─────────────────────────────────────────────────────────────────────────────
 export const LESSON_PLANS: Record<string, LessonPlanData> = {
-  'a1-u1': { title: 'The First Encounter',     theme: 'Greetings & Introductions',                  phrases: a1u1Phrases, practice: a1u1Practice, test: a1u1Test },
-  'a1-u2': { title: 'The Rhythm of Life',      theme: 'Numbers, Dates & Time',                      phrases: a1u2Phrases, practice: a1u2Practice, test: a1u2Test },
-  'a1-u3': { title: 'All in the Family',       theme: 'Family members, possessives & relationships', phrases: a1u3Phrases, practice: a1u3Practice, test: a1u3Test },
-  'a1-u4': { title: 'Café Culture',            theme: 'Ordering food & drink, polite requests',     phrases: a1u4Phrases, practice: a1u4Practice, test: a1u4Test },
-  'a1-u5': { title: 'What Are You Wearing?',   theme: 'Colors, clothing & adjective agreement',     phrases: a1u5Phrases, practice: a1u5Practice, test: a1u5Test },
-  'a1-u6': { title: 'Getting Around',          theme: 'Directions, city places & prepositions',     phrases: a1u6Phrases, practice: a1u6Practice, test: a1u6Test },
-  'a1-u7': { title: 'From Dawn to Dusk',       theme: 'Daily routines, reflexive verbs & time of day', phrases: a1u7Phrases, practice: a1u7Practice, test: a1u7Test },
-  'a1-u8': { title: 'The French Sky',          theme: 'Weather expressions, seasons & the impersonal il', phrases: a1u8Phrases, practice: a1u8Practice, test: a1u8Test },
+  'a1-u1':  { title: 'The First Encounter',     theme: 'Greetings & Introductions',                       phrases: a1u1Phrases,  practice: a1u1Practice,  test: a1u1Test  },
+  'a1-u2':  { title: 'The Rhythm of Life',      theme: 'Numbers, Dates & Time',                           phrases: a1u2Phrases,  practice: a1u2Practice,  test: a1u2Test  },
+  'a1-u3':  { title: 'All in the Family',       theme: 'Family members, possessives & relationships',     phrases: a1u3Phrases,  practice: a1u3Practice,  test: a1u3Test  },
+  'a1-u4':  { title: 'Café Culture',            theme: 'Ordering food & drink, polite requests',          phrases: a1u4Phrases,  practice: a1u4Practice,  test: a1u4Test  },
+  'a1-u5':  { title: 'What Are You Wearing?',   theme: 'Colors, clothing & adjective agreement',          phrases: a1u5Phrases,  practice: a1u5Practice,  test: a1u5Test  },
+  'a1-u6':  { title: 'Getting Around',          theme: 'Directions, city places & prepositions',          phrases: a1u6Phrases,  practice: a1u6Practice,  test: a1u6Test  },
+  'a1-u7':  { title: 'From Dawn to Dusk',       theme: 'Daily routines, reflexive verbs & time of day',   phrases: a1u7Phrases,  practice: a1u7Practice,  test: a1u7Test  },
+  'a1-u8':  { title: 'The French Sky',          theme: 'Weather expressions, seasons & the impersonal il', phrases: a1u8Phrases,  practice: a1u8Practice,  test: a1u8Test  },
+  'a1-u9':  { title: 'At the Market',           theme: 'Shopping, partitive articles & polite requests',  phrases: a1u9Phrases,  practice: a1u9Practice,  test: a1u9Test  },
+  'a1-u10': { title: 'À bientôt!',              theme: 'Farewells, travel & countries with prepositions', phrases: a1u10Phrases, practice: a1u10Practice, test: a1u10Test },
 }
