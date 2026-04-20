@@ -406,7 +406,8 @@ const GENERATED: DrillQ[] = (Object.keys(PHRASES) as CefrLevel[]).flatMap((level
   }))
 })
 
-export const QUESTION_BANK: DrillQ[] = GENERATED
+import { A2_EXTRA_QUESTIONS } from './a2ExtraQuestions'
+export const QUESTION_BANK: DrillQ[] = [...GENERATED, ...A2_EXTRA_QUESTIONS]
 export { PHRASES }
 
 /** Returns the source phrases for a unit (for the intro card) */
