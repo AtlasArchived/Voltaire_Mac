@@ -1,4 +1,3 @@
-'use client'
 /**
  * lib/api.ts
  * Voltaire — Typed API client
@@ -99,22 +98,39 @@ export interface VoiceResponse {
   backend:    string
 }
 
-export interface WordLookup {
-  french:     string
-  english:    string
-  note:       string | null
-  is_cognate: boolean
-  found:      boolean
+export interface MemorySummary {
+  greeting:       string
+  name:           string
+  streak:         number
+  longest_streak: number
+  xp_today:       number
+  daily_goal_xp:  number
+  goal_pct:       number
+  total_xp:       number
+  elo:            number
+  total_lessons:  number
+  total_answers:  number
+  last_lesson?: {
+    unit_id:     string
+    cefr:        string
+    accuracy:    number
+    xp_earned:   number
+    finished_at: string
+  }
+  top_weak_skill?: {
+    skill:      string
+    error_rate: number
+  }
 }
 
-export interface LessonMemoryItem {
-  id:          number
-  created_at:  string
-  lesson_id:   string
-  unit_id:     string
-  title:       string
-  source:      string
-  detail:      string
+export interface WordLookup {
+  french:          string
+  english:         string
+  direction:       'fr-en' | 'en-fr'
+  part_of_speech?: string | null
+  note:            string | null
+  is_cognate:      boolean
+  found:           boolean
 }
 
 export interface Story {
@@ -145,17 +161,6 @@ export interface StoryDetail extends Story {
     correct:      number
     explanation:  string
   }[]
-}
-
-export interface PlacementQuizQuestion {
-  question: string;
-  options: string[];
-  answer: string;
-}
-
-export interface PlacementQuizData {
-  title: string;
-  questions: PlacementQuizQuestion[];
 }
 
 export interface DrillQuestion {
@@ -221,37 +226,6 @@ export interface AdaptiveNextLesson {
   reason: string
 }
 
-export interface AdaptiveMasteryMap {
-  [key: string]: { mastery?: number; lastSeenAt?: number }
-}
-
-export interface PerformanceTypeStat {
-  q_type: string
-  attempts: number
-  accuracy: number
-  avg_response_ms: number
-}
-
-export interface PerformanceSummary {
-  days: number
-  attempts: number
-  accuracy: number
-  by_source: Record<string, number>
-  by_type: PerformanceTypeStat[]
-}
-
-export interface PerformanceTrendPoint {
-  day: string
-  attempts: number
-  accuracy: number
-  avg_response_ms: number
-}
-
-export interface PerformanceTrend {
-  days: number
-  points: PerformanceTrendPoint[]
-}
-
 export interface C1Status {
   elo: number
   target_elo: number
@@ -300,38 +274,6 @@ export interface AiCoachPlan {
   blocks: string[]
 }
 
-export interface DiagnosisPattern {
-  tag: string
-  description: string
-  tip: string
-}
-
-export interface PatternDiagnosis {
-  patterns: DiagnosisPattern[]
-  headline: string
-  overall_advice: string
-}
-
-export interface GeneratedDrillQ {
-  type: 'arrange' | 'translate'
-  cefr: string
-  unitId: string
-  lessonType: string
-  prompt: string
-  answer: string
-  note?: string
-  words?: string[]
-  direction?: string
-  isGenerated?: boolean
-}
-
-export interface LeaderboardEntry {
-  rank: number
-  name: string
-  xp: number
-  isCurrentUser: boolean
-}
-
 // ── API calls ─────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -354,7 +296,7 @@ export const api = {
     post<LessonResponse>('/lesson/answer', { user_input, session_id }),
 
   // Streaming answer — returns a ReadableStream
-  answerStream: (user_input: string, history: {role:string;text:string}[]) =>
+  answerStream: (user_input: string, history: {role:string;text:string}[] = []) =>
     fetch(`${BASE}/lesson/answer/stream`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -404,11 +346,6 @@ export const api = {
   getWeakSkillReport: () => get<{ skills: WeakSkillItem[] }>('/adaptive/weak-skill-report'),
   getReviewQueue: (limit = 10) => get<{ items: ReviewQueueItem[] }>(`/adaptive/review-queue?limit=${limit}`),
   getNextBestLesson: () => get<AdaptiveNextLesson>('/adaptive/next-best-lesson'),
-  getAdaptiveMastery: () => get<{ mastery: AdaptiveMasteryMap }>('/adaptive/mastery'),
-  saveAdaptiveMastery: (mastery: AdaptiveMasteryMap) =>
-    post<{ ok: boolean; count: number }>('/adaptive/mastery', { mastery }),
-  getPerformanceSummary: (days = 14) => get<PerformanceSummary>(`/performance/summary?days=${days}`),
-  getPerformanceTrend: (days = 30) => get<PerformanceTrend>(`/performance/trend?days=${days}`),
   logAdaptiveEvent: (data: {
     q_type: string
     cefr?: string
@@ -421,6 +358,9 @@ export const api = {
   }) => post<{ ok: boolean }>('/adaptive/event', data),
   applyLearnProgress: (correct: boolean) =>
     post<{ ok: boolean; xp_gain: number; elo_gain: number }>('/learn/progress', { correct, mode: 'learn' }),
+  getMemory: () => get<MemorySummary>('/memory'),
+  completeLesson: (data: { unit_id: string; cefr: string; questions_answered: number; accuracy_pct: number; xp_earned: number }) =>
+    post<{ ok: boolean }>('/lesson/complete', data),
   getC1Status: () => get<C1Status>('/c1/status'),
   getC2Status: () => get<C2Status>('/c2/status'),
   getCefrMissions: () => get<{ missions: CefrMission[]; elo: number }>('/cefr/missions'),
@@ -435,13 +375,6 @@ export const api = {
     expected_answer: string
     note?: string
   }) => post<AiMistakeFeedback>('/ai/mistake-feedback', data),
-  getPatternDiagnosis: () => get<PatternDiagnosis>('/adaptive/pattern-diagnosis'),
-  generatePractice: (data: {
-    cefr: string
-    skill_tag: string
-    examples: { prompt: string; answer: string }[]
-    count: number
-  }) => post<{ questions: GeneratedDrillQ[] }>('/ai/generate-practice', data),
 
   // Stories
   getStories:       () => get<{ stories: Story[] }>('/stories'),
@@ -451,7 +384,6 @@ export const api = {
 
   // Onboarding
   getOnboardingStatus: () => get<{ onboarded: boolean }>('/onboarding/status'),
-  getPlacementQuiz: () => get<PlacementQuizData>('/placement-quiz'),
   completeOnboarding:  (data: {
     name: string; goal: string; daily_xp: number; placement_score: number
   }) => post<{ ok: boolean }>('/onboarding/complete', data),
@@ -462,59 +394,6 @@ export const api = {
 
   // Brief
   generateBrief: () => post<{ ok: boolean }>('/brief/generate'),
-
-  // Lesson completion memory (milestones)
-  logLessonMemory: (body: {
-    lesson_id: string
-    title:     string
-    source?:   string
-    unit_id?:  string
-    detail?:   string
-  }) => post<{ ok: boolean }>('/lesson-memory', body),
-
-  getLessonMemory: (limit = 80) =>
-    get<{ items: LessonMemoryItem[] }>(`/lesson-memory?limit=${limit}`),
-
-  hoverTranslation: (word: string, pair: 'fr|en' | 'en|fr' = 'fr|en') =>
-    get<{ text: string }>(
-      `/translate/hover?q=${encodeURIComponent(word)}&pair=${encodeURIComponent(pair)}`,
-    ),
-}
-
-// ── Mock leaderboard ─────────────────────────────────────────────────────────
-
-const MOCK_WEEK: LeaderboardEntry[] = [
-  { rank: 1,  name: 'Amélie Fontaine',  xp: 4820, isCurrentUser: false },
-  { rank: 2,  name: 'Lucas Bertrand',   xp: 4410, isCurrentUser: false },
-  { rank: 3,  name: 'Sophie Marchand',  xp: 3990, isCurrentUser: false },
-  { rank: 4,  name: 'Hugo Leclerc',     xp: 3540, isCurrentUser: false },
-  { rank: 5,  name: 'You',              xp: 3120, isCurrentUser: true  },
-  { rank: 6,  name: 'Camille Dubois',   xp: 2870, isCurrentUser: false },
-  { rank: 7,  name: 'Nathan Rousseau',  xp: 2640, isCurrentUser: false },
-  { rank: 8,  name: 'Chloé Lambert',    xp: 2210, isCurrentUser: false },
-  { rank: 9,  name: 'Théo Girard',      xp: 1980, isCurrentUser: false },
-  { rank: 10, name: 'Inès Moreau',      xp: 1750, isCurrentUser: false },
-]
-
-const MOCK_ALLTIME: LeaderboardEntry[] = [
-  { rank: 1,  name: 'Sophie Marchand',  xp: 52800, isCurrentUser: false },
-  { rank: 2,  name: 'Amélie Fontaine',  xp: 48400, isCurrentUser: false },
-  { rank: 3,  name: 'Hugo Leclerc',     xp: 43100, isCurrentUser: false },
-  { rank: 4,  name: 'Camille Dubois',   xp: 39700, isCurrentUser: false },
-  { rank: 5,  name: 'Lucas Bertrand',   xp: 36200, isCurrentUser: false },
-  { rank: 6,  name: 'Chloé Lambert',    xp: 29500, isCurrentUser: false },
-  { rank: 7,  name: 'Nathan Rousseau',  xp: 24800, isCurrentUser: false },
-  { rank: 8,  name: 'You',              xp: 21300, isCurrentUser: true  },
-  { rank: 9,  name: 'Théo Girard',      xp: 18600, isCurrentUser: false },
-  { rank: 10, name: 'Inès Moreau',      xp: 14400, isCurrentUser: false },
-]
-
-export function getLeaderboard(period: 'week' | 'alltime'): Promise<LeaderboardEntry[]> {
-  return new Promise(resolve => {
-    setTimeout(() => {
-      resolve(period === 'alltime' ? MOCK_ALLTIME : MOCK_WEEK)
-    }, 220)
-  })
 }
 
 // ── Streaming helper ──────────────────────────────────────────────────────────

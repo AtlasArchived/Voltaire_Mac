@@ -1,399 +1,415 @@
 'use client'
-import React, { useMemo, useState } from 'react'
-import { CourseUnit } from '../lib/course'
+import { useMemo } from 'react'
+import { UNIT_META, CEFR_ELO, UnitMeta, CefrLevel } from '../lib/questionBank'
+import { LEVEL_GRAMMAR_IDS } from '../lib/grammarBank'
 
-// ── Layout constants ──────────────────────────────────────────────────────────
-const W      = 360          // container width px
-const N_D    = 72           // node diameter px
-const ROW_H  = 132          // px per row  (node + label + gap for bezier curves)
+interface SkillTreeProps {
+  learnerElo: number
+  completedUnits: Set<string>
+  completedGrammar: Set<string>
+  currentUnitId: string
+  onSelectUnit: (unitId: string) => void
+  onSelectGrammar: (grammarId: string) => void
+}
 
-// Five column center-x positions within W
-const COL_X = [38, 112, 182, 252, 322] as const
-type  Col   = 0 | 1 | 2 | 3 | 4
+type NodeState = 'complete' | 'current' | 'available' | 'locked-prereq' | 'locked-level'
 
-// Repeating row patterns — which columns are occupied
-const PATTERNS: Col[][] = [
-  [2],          // 1 node — centred
-  [1, 3],       // 2 nodes
-  [0, 2, 4],    // 3 nodes
-  [1, 3],
-  [0, 2, 4],
+const CEFR_CONFIG: Record<CefrLevel, { label: string; color: string; dim: string; emoji: string }> = {
+  A1: { label: 'Beginner',     color: '#34d399', dim: 'rgba(52,211,153,.13)',  emoji: '🌱' },
+  A2: { label: 'Elementary',   color: '#4f9cf9', dim: 'rgba(79,156,249,.13)',  emoji: '🌿' },
+  B1: { label: 'Intermediate', color: '#a78bfa', dim: 'rgba(167,139,250,.13)', emoji: '🌳' },
+  B2: { label: 'Upper-Int.',   color: '#f59e0b', dim: 'rgba(245,158,11,.13)',  emoji: '🔥' },
+  C1: { label: 'Advanced',     color: '#f87171', dim: 'rgba(248,113,113,.13)', emoji: '⚡' },
+  C2: { label: 'Mastery',      color: '#e879f9', dim: 'rgba(232,121,249,.13)', emoji: '👑' },
+}
+
+const UNIT_ICONS = [
+  '👋','🗣️','🏠','🍎','🌍','⏰','🚌','💬','🛒','☀️',
+  '📖','🎒','✈️','🏃','🌟','📝','🎵','🏪','🗺️','🎭',
+  '💼','🎓','🏆','💡','🌊','🎯','📰','🏛️','🔑','🌐',
+  '🔥','⚡','🎪','🌙','🦅','💎','🏰','🎨','🧠','⚔️',
+  '🦉','🎩','📜','🔮','⚗️','🌌','🏛️','👑','🌠','💫',
+  '🔱','🏔️','🎭','💡','🎯','🔰','🌟','✨','🌀','🎊',
 ]
 
-interface TreeNode { unit: CourseUnit; row: number; col: Col; idx: number }
-interface Edge     { fr: number; fc: Col; tr: number; tc: Col }
+// ── Layout constants ──────────────────────────────────────────────────────────
+const W       = 340
+const NODE_D  = 72
+const NODE_R  = NODE_D / 2
+const STEP_Y  = 118
+const PAD_T   = 18
+const COL_X   = [75, 170, 265]
 
-// ── Tree layout builder ───────────────────────────────────────────────────────
-function buildTree(units: CourseUnit[]) {
-  const nodes: TreeNode[] = []
-  const rowCols: Col[][] = []
-  let ui = 0, row = 0
+// ── Tree node definition ──────────────────────────────────────────────────────
+interface LayoutNode {
+  col: 0|1|2
+  row: number
+  parents: number[]    // layout indices of parent nodes
+  choke: boolean
+  type: 'unit' | 'grammar'
+  unitIdx?: number     // index into units[] array (for type='unit')
+  grammarIdx?: number  // 0 or 1 (which grammar checkpoint, for type='grammar')
+}
 
-  while (ui < units.length) {
-    const pat  = PATTERNS[row % PATTERNS.length]
-    const take = Math.min(pat.length, units.length - ui)
-    const cols: Col[] =
-      take === 1 ? [2] :
-      take === 2 ? [1, 3] :
-      pat.slice(0, take) as Col[]
-    cols.forEach(col => nodes.push({ unit: units[ui++], row, col, idx: nodes.length }))
-    rowCols.push(cols)
-    row++
-  }
+//  Layout for 10 units + 2 grammar checkpoints (12 nodes total)
+//
+//               [U0]         row 0  root
+//              /    \
+//           [U1]    [U2]     row 1  branches
+//           [U3]    [U4]     row 2  branches continue
+//              \    /
+//               [U5]         row 3  ★ CHOKE
+//               [G1]         row 4  📚 GRAMMAR checkpoint 1
+//              /    \
+//           [U6]    [U7]     row 5  branches
+//              \    /
+//               [U8]         row 6  ★ CHOKE
+//               [G2]         row 7  📚 GRAMMAR checkpoint 2
+//               [U9]         row 8  final
+//
+const LAYOUT_12: LayoutNode[] = [
+  { type: 'unit',    unitIdx: 0, col: 1, row: 0, parents: [],      choke: false },  // 0 root
+  { type: 'unit',    unitIdx: 1, col: 0, row: 1, parents: [0],     choke: false },  // 1 left
+  { type: 'unit',    unitIdx: 2, col: 2, row: 1, parents: [0],     choke: false },  // 2 right
+  { type: 'unit',    unitIdx: 3, col: 0, row: 2, parents: [1],     choke: false },  // 3 left-2
+  { type: 'unit',    unitIdx: 4, col: 2, row: 2, parents: [2],     choke: false },  // 4 right-2
+  { type: 'unit',    unitIdx: 5, col: 1, row: 3, parents: [3, 4],  choke: true  },  // 5 ★ CHOKE 1
+  { type: 'grammar', grammarIdx: 0, col: 1, row: 4, parents: [5],  choke: false },  // 6 📚 GRAMMAR 1
+  { type: 'unit',    unitIdx: 6, col: 0, row: 5, parents: [6],     choke: false },  // 7 left-3
+  { type: 'unit',    unitIdx: 7, col: 2, row: 5, parents: [6],     choke: false },  // 8 right-3
+  { type: 'unit',    unitIdx: 8, col: 1, row: 6, parents: [7, 8],  choke: true  },  // 9 ★ CHOKE 2
+  { type: 'grammar', grammarIdx: 1, col: 1, row: 7, parents: [9],  choke: false },  // 10 📚 GRAMMAR 2
+  { type: 'unit',    unitIdx: 9, col: 1, row: 8, parents: [10],    choke: false },  // 11 final
+]
 
-  const edges: Edge[] = []
-  for (let r = 0; r < rowCols.length - 1; r++) {
-    for (const fc of rowCols[r]) {
-      for (const tc of rowCols[r + 1]) {
-        if (Math.abs(fc - tc) <= 2) edges.push({ fr: r, fc, tr: r + 1, tc })
+// Fallback: linear layout for non-10-unit levels
+function makeLinearLayout(n: number): LayoutNode[] {
+  return Array.from({ length: n }, (_, i) => ({
+    type: 'unit' as const,
+    unitIdx: i,
+    col: ([1, 0, 2] as const)[i % 3],
+    row: i,
+    parents: i === 0 ? [] : [i - 1],
+    choke: false,
+  }))
+}
+
+function getLayout(n: number): LayoutNode[] {
+  return n === 10 ? LAYOUT_12 : makeLinearLayout(n)
+}
+
+function nx(l: LayoutNode) { return COL_X[l.col] }
+function ny(l: LayoutNode) { return PAD_T + l.row * STEP_Y + NODE_R }
+
+function edgePath(a: LayoutNode, b: LayoutNode): string {
+  const x1 = nx(a), y1 = ny(a), x2 = nx(b), y2 = ny(b)
+  const my = (y1 + y2) / 2
+  return `M ${x1} ${y1} C ${x1} ${my} ${x2} ${my} ${x2} ${y2}`
+}
+
+// ── Availability logic ────────────────────────────────────────────────────────
+function isAvailable(idx: number, layout: LayoutNode[], completedIdxs: Set<number>): boolean {
+  const node = layout[idx]
+  if (node.parents.length === 0) return true
+  if (node.choke) return node.parents.every(p => completedIdxs.has(p))
+  return node.parents.some(p => completedIdxs.has(p))
+}
+
+// ── Section component ─────────────────────────────────────────────────────────
+interface SectionProps {
+  level: CefrLevel
+  units: UnitMeta[]
+  cfg: typeof CEFR_CONFIG[CefrLevel]
+  levelUnlocked: boolean
+  completedUnits: Set<string>
+  completedGrammar: Set<string>
+  currentUnitId: string
+  iconOffset: number
+  grammarIds: [string, string]
+  onSelectUnit: (id: string) => void
+  onSelectGrammar: (id: string) => void
+}
+
+function Section({
+  level, units, cfg, levelUnlocked,
+  completedUnits, completedGrammar, currentUnitId,
+  iconOffset, grammarIds, onSelectUnit, onSelectGrammar,
+}: SectionProps) {
+  const layout = getLayout(units.length)
+  const maxRow = Math.max(...layout.map(l => l.row))
+  const svgH = PAD_T + (maxRow + 1) * STEP_Y + 30
+
+  // Which layout indices are "done" (unit completed or grammar completed)
+  const completedIdxs = useMemo(() => {
+    const s = new Set<number>()
+    layout.forEach((node, i) => {
+      if (node.type === 'unit' && node.unitIdx !== undefined) {
+        if (completedUnits.has(units[node.unitIdx]?.id)) s.add(i)
+      } else if (node.type === 'grammar' && node.grammarIdx !== undefined) {
+        if (completedGrammar.has(grammarIds[node.grammarIdx])) s.add(i)
       }
+    })
+    return s
+  }, [layout, completedUnits, completedGrammar, units, grammarIds])
+
+  function getNodeState(idx: number): NodeState {
+    if (!levelUnlocked) return 'locked-level'
+    const node = layout[idx]
+    const available = isAvailable(idx, layout, completedIdxs)
+    if (!available) return 'locked-prereq'
+    if (completedIdxs.has(idx)) return 'complete'
+    if (node.type === 'unit' && node.unitIdx !== undefined) {
+      if (units[node.unitIdx]?.id === currentUnitId) return 'current'
     }
+    return 'available'
   }
 
-  return { nodes, edges, totalRows: row }
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function crownLevel(unit: CourseUnit): number {
-  const done  = unit.lessons.filter(l => l.complete).length
-  const total = unit.lessons.length
-  if (total === 0) return 0
-  return Math.floor((done / total) * 5)
-}
-
-function nodeCenter(row: number, col: Col): [number, number] {
-  return [COL_X[col], row * ROW_H + N_D / 2]
-}
-
-function bezierPath(
-  [fx, fy]: [number, number],
-  [tx, ty]: [number, number],
-): string {
-  const y1 = fy + N_D / 2 + 4
-  const y2 = ty - N_D / 2 - 4
-  return `M${fx},${y1} C${fx},${(y1 + y2) / 2} ${tx},${(y1 + y2) / 2} ${tx},${y2}`
-}
-
-// ── XP reward estimate ────────────────────────────────────────────────────────
-function estimateXp(unit: CourseUnit): number {
-  return unit.lessons.length * 10
-}
-
-// ── Component ─────────────────────────────────────────────────────────────────
-interface Props {
-  units:       CourseUnit[]
-  color:       string
-  activeIndex: number
-  onSelect:    (idx: number) => void
-}
-
-export default function SkillTree({ units, color, activeIndex, onSelect }: Props) {
-  const { nodes, edges, totalRows } = useMemo(() => buildTree(units), [units])
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
-
-  const svgH = totalRows * ROW_H + 32
+  const doneCount = units.filter(u => completedUnits.has(u.id)).length
 
   return (
-    <div style={{
-      position: 'relative',
-      width:    W,
-      maxWidth: '100%',
-      margin:   '0 auto',
-      userSelect: 'none',
-    }}>
+    <div style={{ marginBottom: 12 }}>
+      {/* Section header */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 4,
+        background: levelUnlocked ? cfg.dim : 'rgba(255,255,255,.03)',
+        border: `1.5px solid ${levelUnlocked ? cfg.color + '44' : 'rgba(255,255,255,.06)'}`,
+        borderRadius: 14,
+      }}>
+        <span style={{ fontSize: 20 }}>{cfg.emoji}</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: levelUnlocked ? cfg.color : 'var(--t4)', letterSpacing: '.08em', textTransform: 'uppercase' }}>
+            {level} — {cfg.label}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 1 }}>
+            {levelUnlocked
+              ? `${doneCount} / ${units.length} units complete`
+              : `Unlocks at ${CEFR_ELO[level].min} ELO`}
+          </div>
+        </div>
+        {levelUnlocked && doneCount === units.length && <span style={{ fontSize: 16 }}>🏆</span>}
+        {!levelUnlocked && <span style={{ fontSize: 16, color: 'var(--t4)' }}>🔒</span>}
+      </div>
 
-      {/* ── SVG connector lines ── */}
-      <svg
-        width={W}
-        height={svgH}
-        style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: 0, overflow: 'visible' }}
-        aria-hidden="true"
-      >
-        <defs>
-          {/* Animated gradient for active paths */}
-          <linearGradient id={`path-grad-${color.replace('#','')}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.9"/>
-            <stop offset="100%" stopColor={color} stopOpacity="0.4"/>
-          </linearGradient>
-        </defs>
+      {/* Tree canvas */}
+      <div style={{ position: 'relative', width: W, maxWidth: '100%', margin: '0 auto', height: svgH }}>
+        {/* SVG edges */}
+        <svg width={W} height={svgH} style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>
+          <defs>
+            <filter id={`glow-${level}`} x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+          </defs>
+          {layout.map((node, idx) =>
+            node.parents.map(parentIdx => {
+              const pDone = completedIdxs.has(parentIdx)
+              const cDone = completedIdxs.has(idx)
+              const pState = getNodeState(parentIdx)
+              const cState = getNodeState(idx)
+              const bright = pDone && (cDone || cState === 'available' || cState === 'current')
+              return (
+                <g key={`e-${parentIdx}-${idx}`}>
+                  <path d={edgePath(layout[parentIdx], node)} fill="none" stroke="rgba(255,255,255,.07)" strokeWidth={7} strokeLinecap="round" />
+                  {bright && (
+                    <path d={edgePath(layout[parentIdx], node)} fill="none" stroke={cfg.color} strokeWidth={5} strokeLinecap="round" opacity={0.7} filter={`url(#glow-${level})`} />
+                  )}
+                  {pDone && !cDone && cState === 'locked-prereq' && (
+                    <path d={edgePath(layout[parentIdx], node)} fill="none" stroke={cfg.color} strokeWidth={4} strokeLinecap="round" opacity={0.25} />
+                  )}
+                </g>
+              )
+            })
+          )}
+        </svg>
 
-        {edges.map((e, i) => {
-          const fn = nodes.find(n => n.row === e.fr && n.col === e.fc)
-          const tn = nodes.find(n => n.row === e.tr && n.col === e.tc)
-          if (!fn || !tn) return null
+        {/* Nodes */}
+        {layout.map((lnode, idx) => {
+          const state = getNodeState(idx)
+          const locked = state === 'locked-level' || state === 'locked-prereq'
+          const x = nx(lnode), y = ny(lnode)
+          const isGrammar = lnode.type === 'grammar'
+          const isChoke = lnode.choke
+          const chokeBlocked = isChoke && state === 'locked-prereq'
 
-          const unlocked = !fn.unit.locked && !tn.unit.locked
-          const fromDone = fn.unit.lessons.every(l => l.complete)
-          const isActive = fn.idx === activeIndex || tn.idx === activeIndex
+          // Grammar node gets a distinct look
+          const grammarColor = '#a78bfa'
+          const nodeColor = isGrammar ? grammarColor : cfg.color
 
-          // Animated dashed line for active unlocked paths
-          const dashAnim = unlocked && !fromDone && isActive
+          const ringColor = state === 'complete' ? nodeColor
+            : state === 'current'   ? nodeColor
+            : state === 'available' ? nodeColor + 'aa'
+            : isChoke ? '#f59e0b55'
+            : 'rgba(255,255,255,.08)'
 
-          return (
-            <path
-              key={i}
-              d={bezierPath(nodeCenter(e.fr, e.fc), nodeCenter(e.tr, e.tc))}
-              fill="none"
-              stroke={
-                !unlocked   ? 'rgba(255,255,255,.04)' :
-                fromDone    ? `url(#path-grad-${color.replace('#','')})` :
-                isActive    ? `${color}66` :
-                              'rgba(255,255,255,.10)'
-              }
-              strokeWidth={unlocked ? (isActive ? 4 : 3) : 2}
-              strokeDasharray={unlocked && !fromDone ? (isActive ? '10 6' : '7 5') : undefined}
-              strokeLinecap="round"
-              style={dashAnim ? { animation: 'dash-march 1.4s linear infinite' } : undefined}
-            />
-          )
-        })}
-      </svg>
+          const bg = isGrammar && state === 'complete' ? grammarColor
+            : isGrammar && state === 'available' ? 'rgba(167,139,250,.15)'
+            : state === 'complete' ? nodeColor
+            : (state === 'current' || state === 'available') ? cfg.dim
+            : 'rgba(255,255,255,.04)'
 
-      {/* ── Nodes ── */}
-      <div style={{ position: 'relative', zIndex: 1, height: svgH }}>
-        {nodes.map(node => {
-          const [cx, cy] = nodeCenter(node.row, node.col)
-          const isActive  = node.idx === activeIndex
-          const allDone   = node.unit.lessons.every(l => l.complete)
-          const isHovered = hoveredIdx === node.idx
-          const crown     = crownLevel(node.unit)
-          const donePct   = node.unit.lessons.length > 0
-            ? Math.round((node.unit.lessons.filter(l=>l.complete).length / node.unit.lessons.length) * 100)
+          const glow = state === 'complete' ? `0 0 18px ${nodeColor}77, 0 4px 14px rgba(0,0,0,.5)`
+            : state === 'current'  ? `0 0 24px ${nodeColor}99, 0 4px 14px rgba(0,0,0,.5)`
+            : state === 'available' ? `0 4px 16px rgba(0,0,0,.4)`
+            : 'none'
+
+          const unitIdx  = lnode.unitIdx
+          const grammarIdx = lnode.grammarIdx
+          const icon = isGrammar ? '📚'
+            : unitIdx !== undefined ? UNIT_ICONS[(iconOffset + unitIdx) % UNIT_ICONS.length]
+            : '?'
+
+          // Count remaining prerequisite paths
+          const remainingPaths = isChoke
+            ? lnode.parents.filter(p => !completedIdxs.has(p)).length
             : 0
 
-          const bg =
-            allDone          ? color :
-            isActive         ? color + '28' :
-            node.unit.locked ? 'rgba(255,255,255,.02)' :
-                               'var(--surface2, #1c2330)'
-
-          const border = node.unit.locked
-            ? 'rgba(255,255,255,.07)'
-            : color
-
-          const shadow = isActive
-            ? `0 6px 0 rgba(0,0,0,.45), 0 0 30px ${color}80`
-            : allDone
-            ? `0 4px 0 rgba(0,0,0,.35), 0 0 16px ${color}44`
-            : '0 5px 0 rgba(0,0,0,.45)'
+          function handleClick() {
+            if (locked) return
+            if (isGrammar && grammarIdx !== undefined) {
+              onSelectGrammar(grammarIds[grammarIdx])
+            } else if (!isGrammar && unitIdx !== undefined) {
+              onSelectUnit(units[unitIdx].id)
+            }
+          }
 
           return (
-            <div
-              key={node.unit.id}
-              style={{
-                position:      'absolute',
-                left:          cx - N_D / 2,
-                top:           cy - N_D / 2,
-                width:         N_D,
-                display:       'flex',
-                flexDirection: 'column',
-                alignItems:    'center',
-                overflow:      'visible',
-              }}
-              onMouseEnter={() => setHoveredIdx(node.idx)}
-              onMouseLeave={() => setHoveredIdx(null)}
-            >
-              {/* Tooltip */}
-              {isHovered && !node.unit.locked && (
+            <div key={`node-${idx}`} style={{ position: 'absolute', left: x - NODE_R, top: y - NODE_R }}>
+              {/* Pulse ring for current unit */}
+              {state === 'current' && (
                 <div style={{
-                  position:   'absolute',
-                  bottom:     N_D + 14,
-                  left:       '50%',
-                  transform:  'translateX(-50%)',
-                  background: 'var(--surface3, #21262d)',
-                  border:     '1px solid rgba(255,255,255,.14)',
-                  borderRadius: 10,
-                  padding:    '7px 12px',
-                  fontSize:   12,
-                  fontWeight: 700,
-                  color:      'var(--text, #fff)',
-                  whiteSpace: 'nowrap',
-                  zIndex:     50,
-                  boxShadow:  '0 4px 20px rgba(0,0,0,.6)',
+                  position: 'absolute', inset: -8, borderRadius: '50%',
+                  border: `2px solid ${nodeColor}`,
+                  animation: 'treePulseRing 2s ease-out infinite',
                   pointerEvents: 'none',
-                  textAlign:  'center',
-                  lineHeight: 1.45,
+                }} />
+              )}
+
+              {/* START indicator for root node when nothing done yet */}
+              {idx === 0 && state === 'available' && (
+                <div style={{
+                  position: 'absolute', top: NODE_D + 22, left: '50%', transform: 'translateX(-50%)',
+                  fontSize: 10, fontWeight: 800, color: cfg.color,
+                  background: `${cfg.color}18`, border: `1px solid ${cfg.color}55`,
+                  borderRadius: 8, padding: '3px 8px', whiteSpace: 'nowrap',
+                  pointerEvents: 'none', zIndex: 5,
                 }}>
-                  <div style={{ marginBottom: 2 }}>{node.unit.title}</div>
-                  <div style={{ fontSize: 11, color: color, fontWeight: 800 }}>
-                    {allDone ? '✓ Complete' : `${donePct}% done`} · ~{estimateXp(node.unit)} XP
-                  </div>
-                  {/* Caret */}
-                  <div style={{
-                    position: 'absolute', top: '100%', left: '50%',
-                    transform: 'translateX(-50%)',
-                    borderLeft: '6px solid transparent', borderRight: '6px solid transparent',
-                    borderTop: '6px solid rgba(255,255,255,.14)',
-                  }}/>
+                  ▶ TAP TO START
                 </div>
               )}
 
-              {/* START bubble above active node */}
-              {isActive && !node.unit.locked && (
-                <div
-                  aria-hidden="true"
-                  style={{
-                    position:  'absolute',
-                    bottom:    N_D + 12,
-                    left:      '50%',
-                    transform: 'translateX(-50%)',
-                    background: color,
-                    color:      '#fff',
-                    fontSize:   12,
-                    fontWeight: 900,
-                    letterSpacing: '.12em',
-                    padding:    '8px 20px',
-                    borderRadius: 24,
-                    boxShadow:  `0 4px 16px rgba(0,0,0,.5)`,
-                    whiteSpace: 'nowrap',
-                    zIndex:     20,
-                    pointerEvents: 'none',
-                    animation:  'skill-pulse 2.4s ease-in-out infinite',
-                  }}
-                >
-                  START
-                  <span style={{
-                    position:    'absolute',
-                    top:         '100%',
-                    left:        '50%',
-                    transform:   'translateX(-50%)',
-                    display:     'block',
-                    width:       0, height: 0,
-                    borderLeft:  '7px solid transparent',
-                    borderRight: '7px solid transparent',
-                    borderTop:   `8px solid ${color}`,
-                  }}/>
-                </div>
-              )}
-
-              {/* ── Pulsing ring on active node ── */}
-              {isActive && !node.unit.locked && (
+              {/* Choke-lock badge */}
+              {chokeBlocked && (
                 <div style={{
-                  position:     'absolute',
-                  top:          -8,
-                  left:         '50%',
-                  transform:    'translateX(-50%)',
-                  width:        N_D + 16,
-                  height:       N_D + 16,
-                  borderRadius: '50%',
-                  border:       `3px solid ${color}`,
-                  opacity:      0.45,
-                  animation:    'pulse-glow 2s ease-in-out infinite',
-                  pointerEvents: 'none',
-                }}/>
+                  position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)',
+                  fontSize: 10, color: '#f59e0b', fontWeight: 800,
+                  background: 'rgba(0,0,0,.75)', border: '1px solid #f59e0b55',
+                  borderRadius: 6, padding: '2px 6px', whiteSpace: 'nowrap', zIndex: 10,
+                }}>
+                  {remainingPaths} path{remainingPaths !== 1 ? 's' : ''} to unlock
+                </div>
               )}
 
-              {/* ── Circle button ── */}
-              <button
-                className="skill-circle"
-                disabled={node.unit.locked}
-                onClick={() => onSelect(node.idx)}
-                style={{
-                  width:        N_D,
-                  height:       N_D,
-                  borderRadius: '50%',
-                  border:       `4px solid ${border}`,
-                  background:   bg,
-                  fontSize:     node.unit.locked ? '1.5rem' : '1.9rem',
-                  display:      'flex',
-                  alignItems:   'center',
-                  justifyContent: 'center',
-                  cursor:       node.unit.locked ? 'not-allowed' : 'pointer',
-                  // Locked: grayscale + reduced opacity
-                  opacity:      node.unit.locked ? 0.35 : 1,
-                  filter:       node.unit.locked ? 'grayscale(1)' : 'none',
-                  boxShadow:    shadow,
-                  outline:      'none',
-                  position:     'relative',
-                  flexShrink:   0,
-                  fontFamily:   'inherit',
-                  padding:      0,
-                  animation:    isActive ? 'skill-pulse 2.4s ease-in-out infinite' : 'none',
-                  WebkitTapHighlightColor: 'transparent',
-                  transition:   'transform .15s cubic-bezier(.34,1.56,.64,1), box-shadow .15s, filter .2s',
-                }}
+              {/* Node button */}
+              <button disabled={locked} onClick={handleClick} title={
+                isGrammar ? `Grammar: ${grammarIds[grammarIdx ?? 0]}`
+                  : unitIdx !== undefined ? units[unitIdx]?.title : ''
+              } style={{
+                width: NODE_D, height: NODE_D,
+                borderRadius: isGrammar ? '22%' : '50%',  // grammar nodes = rounded square
+                border: `${state === 'current' ? 4 : 3}px solid ${ringColor}`,
+                background: bg,
+                boxShadow: glow,
+                cursor: locked ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: state === 'complete' && !isGrammar ? '1.35rem' : '1.55rem',
+                color: state === 'locked-level' || state === 'locked-prereq' ? 'rgba(255,255,255,.25)' : 'var(--text)',
+                opacity: locked ? 0.42 : 1,
+                transition: 'transform .13s, box-shadow .15s',
+                position: 'relative', padding: 0, outline: 'none',
+              }}
+                onMouseEnter={e => { if (!locked) (e.currentTarget as HTMLElement).style.transform = 'scale(1.1)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)' }}
               >
-                {/* Lock icon overlay for locked nodes */}
-                {node.unit.locked ? (
-                  <span style={{ fontSize: '1.5rem' }}>🔒</span>
-                ) : allDone ? (
-                  // Completion checkmark overlay
-                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <span>{node.unit.emoji}</span>
-                    <span style={{
-                      position: 'absolute', bottom: -6, right: -8,
-                      width: 20, height: 20, borderRadius: '50%',
-                      background: '#fff', color: color,
-                      fontSize: 12, fontWeight: 900,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      boxShadow: '0 2px 6px rgba(0,0,0,.5)',
-                    }}>✓</span>
-                  </div>
-                ) : (
-                  node.unit.emoji
+                {/* Choke badge */}
+                {isChoke && !locked && (
+                  <div style={{
+                    position: 'absolute', top: -3, right: -3,
+                    width: 18, height: 18, borderRadius: '50%',
+                    background: state === 'complete' ? '#fff' : '#f59e0b',
+                    color: '#000', fontSize: 9, fontWeight: 900,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    border: '1.5px solid rgba(0,0,0,.4)',
+                  }}>⚡</div>
                 )}
-
-                {/* Crown badge */}
-                {crown >= 5 && (
-                  <span style={{
-                    position: 'absolute', top: -11, right: -4,
-                    fontSize: 17, lineHeight: 1,
-                    filter: 'drop-shadow(0 2px 4px rgba(0,0,0,.7))',
-                    pointerEvents: 'none',
-                  }}>👑</span>
-                )}
-                {crown >= 3 && crown < 5 && (
-                  <span style={{
-                    position: 'absolute', top: -11, right: -4,
-                    fontSize: 15, lineHeight: 1,
-                    filter: 'drop-shadow(0 2px 4px rgba(0,0,0,.7))',
-                    pointerEvents: 'none',
-                  }}>⭐</span>
-                )}
+                {locked && !isGrammar ? '🔒'
+                  : chokeBlocked ? '⛓'
+                  : state === 'complete' && !isGrammar ? '✓'
+                  : icon}
               </button>
 
-              {/* ── Crown dots (5 progress pips) ── */}
-              {!node.unit.locked && (
-                <div style={{ display: 'flex', gap: 4, marginTop: 7 }}>
-                  {[1, 2, 3, 4, 5].map(d => (
-                    <div key={d} style={{
-                      width:        7,
-                      height:       7,
-                      borderRadius: '50%',
-                      background:   d <= crown ? color : 'rgba(255,255,255,.1)',
-                      boxShadow:    d <= crown ? `0 0 5px ${color}88` : 'none',
-                      transition:   'all .3s',
-                    }} />
-                  ))}
-                </div>
-              )}
-
-              {/* ── Label ── */}
+              {/* Label */}
               <div style={{
-                marginTop:  5,
-                fontSize:   10,
-                fontWeight: 700,
-                textAlign:  'center',
-                lineHeight: 1.25,
-                maxWidth:   84,
-                overflow:   'hidden',
-                display:    '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-                color: node.unit.locked
-                  ? 'rgba(255,255,255,.16)'
-                  : isActive
-                  ? '#fff'
-                  : allDone
-                  ? color
-                  : 'rgba(255,255,255,.55)',
+                position: 'absolute', top: NODE_D + 5, left: '50%', transform: 'translateX(-50%)',
+                fontSize: 10, fontWeight: 700,
+                color: state === 'complete' ? nodeColor
+                     : state === 'current'  ? '#fff'
+                     : isGrammar && state === 'available' ? grammarColor
+                     : state === 'available' ? 'var(--t2)'
+                     : 'rgba(255,255,255,.2)',
+                whiteSpace: 'nowrap',
+                textShadow: (state === 'complete' || state === 'current') ? `0 0 8px ${nodeColor}88` : 'none',
               }}>
-                {node.unit.title}
+                {isGrammar
+                  ? (state === 'complete' ? '✓ Grammar' : '📚 Grammar')
+                  : unitIdx !== undefined ? units[unitIdx]?.title : ''}
               </div>
             </div>
           )
         })}
       </div>
+    </div>
+  )
+}
+
+// ── Root ──────────────────────────────────────────────────────────────────────
+export default function SkillTree({
+  learnerElo, completedUnits, completedGrammar, currentUnitId, onSelectUnit, onSelectGrammar,
+}: SkillTreeProps) {
+  const byLevel = useMemo(() => {
+    const levels: CefrLevel[] = ['A1','A2','B1','B2','C1','C2']
+    let iconOffset = 0
+    return levels.map(level => {
+      const units = UNIT_META.filter(u => u.cefr === level)
+      const ico   = iconOffset
+      iconOffset += units.length
+      return {
+        level, units, cfg: CEFR_CONFIG[level],
+        unlocked: learnerElo >= CEFR_ELO[level].min,
+        ico,
+        grammarIds: LEVEL_GRAMMAR_IDS[level],
+      }
+    })
+  }, [learnerElo])
+
+  return (
+    <div className="skill-tree-wrap">
+      {byLevel.map(({ level, units, cfg, unlocked, ico, grammarIds }) => (
+        <Section
+          key={level}
+          level={level}
+          units={units}
+          cfg={cfg}
+          levelUnlocked={unlocked}
+          completedUnits={completedUnits}
+          completedGrammar={completedGrammar}
+          currentUnitId={currentUnitId}
+          iconOffset={ico}
+          grammarIds={grammarIds as [string, string]}
+          onSelectUnit={onSelectUnit}
+          onSelectGrammar={onSelectGrammar}
+        />
+      ))}
+      <div style={{ height: 60 }} />
     </div>
   )
 }

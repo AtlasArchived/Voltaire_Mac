@@ -2,53 +2,21 @@ const { app, BrowserWindow, dialog } = require('electron')
 const { spawn } = require('child_process')
 const path = require('path')
 const http = require('http')
-const fs = require('fs')
 
+const ROOT = path.resolve(__dirname, '..')
+const FRONTEND_DIR = path.join(ROOT, 'frontend')
 const BACKEND_PORT = 8000
 const FRONTEND_PORT = 3000
-
-/** Project / packaged app root (electron lives in electron/) */
-const appRoot = path.resolve(__dirname, '..')
-const appFrontendDir = path.join(appRoot, 'frontend')
-const appIconPath = path.join(appFrontendDir, 'public', 'icons', 'icon-512.png')
 
 let backendProc = null
 let frontendProc = null
 let mainWindow = null
 let quitting = false
 
-const gotLock = app.requestSingleInstanceLock()
-if (!gotLock) {
-  app.quit()
-  process.exit(0)
-}
-
-function loadDotEnv(dir) {
-  if (!dir) return
-  const p = path.join(dir, '.env')
-  if (!fs.existsSync(p)) return
-  const text = fs.readFileSync(p, 'utf8')
-  for (const line of text.split('\n')) {
-    const t = line.trim()
-    if (!t || t.startsWith('#')) continue
-    const i = t.indexOf('=')
-    if (i === -1) continue
-    const key = t.slice(0, i).trim()
-    let val = t.slice(i + 1).trim()
-    if (
-      (val.startsWith('"') && val.endsWith('"')) ||
-      (val.startsWith("'") && val.endsWith("'"))
-    ) {
-      val = val.slice(1, -1)
-    }
-    if (key && process.env[key] === undefined) process.env[key] = val
-  }
-}
-
-function run(cmd, args, cwd, env) {
+function run(cmd, args, cwd) {
   return spawn(cmd, args, {
     cwd,
-    env: env || process.env,
+    env: process.env,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 }
@@ -94,27 +62,13 @@ function wireLogs(name, proc) {
 }
 
 async function startServices() {
-  const external = process.env.VOLTAIRE_EXTERNAL_SERVER === '1'
-  if (external) {
-    await waitForUrl(`http://127.0.0.1:${BACKEND_PORT}/api/health`, 30000)
-    await waitForUrl(`http://127.0.0.1:${FRONTEND_PORT}`, 45000)
-    return
-  }
-
-  backendProc = run(
-    'python3',
-    ['-m', 'uvicorn', 'backend.main:app', '--host', '127.0.0.1', '--port', String(BACKEND_PORT)],
-    appRoot
-  )
+  backendProc = run('python3', ['-m', 'uvicorn', 'backend.main:app', '--host', '127.0.0.1', '--port', String(BACKEND_PORT)], ROOT)
   wireLogs('backend', backendProc)
 
-  const hasBuild = fs.existsSync(path.join(appFrontendDir, '.next', 'BUILD_ID'))
+  // Start frontend in production if build exists, otherwise dev mode.
+  const hasBuild = require('fs').existsSync(path.join(FRONTEND_DIR, '.next', 'BUILD_ID'))
   const frontArgs = hasBuild ? ['run', 'start'] : ['run', 'dev']
-  const feEnv = {
-    ...process.env,
-    NODE_ENV: hasBuild ? 'production' : process.env.NODE_ENV || 'development',
-  }
-  frontendProc = run('npm', frontArgs, appFrontendDir, feEnv)
+  frontendProc = run('npm', frontArgs, FRONTEND_DIR)
   wireLogs('frontend', frontendProc)
 
   await waitForUrl(`http://127.0.0.1:${BACKEND_PORT}/api/health`, 30000)
@@ -128,7 +82,6 @@ async function createMainWindow() {
     minWidth: 980,
     minHeight: 700,
     title: 'Voltaire',
-    icon: appIconPath,
     autoHideMenuBar: true,
     backgroundColor: '#0d1117',
     webPreferences: {
@@ -139,13 +92,6 @@ async function createMainWindow() {
 
   await mainWindow.loadURL(`http://127.0.0.1:${FRONTEND_PORT}`)
 }
-
-app.on('second-instance', () => {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.focus()
-  }
-})
 
 app.on('before-quit', () => {
   quitting = true
@@ -163,17 +109,6 @@ app.on('activate', () => {
 
 app.whenReady().then(async () => {
   try {
-    if (app.isPackaged) {
-      process.env.VOLTAIRE_DATA_DIR = app.getPath('userData')
-    }
-    loadDotEnv(appRoot)
-    loadDotEnv(app.getPath('userData'))
-
-    if (process.platform === 'darwin' && app.dock) {
-      try {
-        app.dock.setIcon(appIconPath)
-      } catch (_) {}
-    }
     await startServices()
     await createMainWindow()
   } catch (err) {

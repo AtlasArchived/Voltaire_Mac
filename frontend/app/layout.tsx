@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from 'next'
+import Script from 'next/script'
 import './globals.css'
 import { Toaster } from 'react-hot-toast'
+import { AppProvider } from './AppContext'
+import AppShell from './AppShell'
 
 export const metadata: Metadata = {
   title: 'Voltaire — French Fluency',
@@ -31,9 +34,12 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr">
+    <html lang="fr" suppressHydrationWarning>
       <body>
-        {children}
+        {/* Runs before hydration — reads localStorage and sets .light class to avoid flash */}
+        <Script id="theme-init" strategy="beforeInteractive">{`
+          (function(){try{var t=localStorage.getItem('voltaire_theme');if(t==='light')document.documentElement.classList.add('light');}catch(e){}})();
+        `}</Script>
         <Toaster
           position="top-center"
           toastOptions={{
@@ -48,6 +54,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             error:   { iconTheme: { primary: '#f87171', secondary: '#111520' } },
           }}
         />
+        <AppProvider>
+          <AppShell>
+            {children}
+          </AppShell>
+        </AppProvider>
       </body>
     </html>
   )

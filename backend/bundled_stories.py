@@ -7,8 +7,6 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from paths import get_db_path
-
 CEFR_MIN_ELO = {"A1": 0, "A2": 1000, "B1": 1200, "B2": 1400, "C1": 1600, "C2": 1800}
 
 
@@ -202,10 +200,9 @@ BUNDLED_STORIES = [
 BUNDLED_STORY_MAP = {s.id: s for s in BUNDLED_STORIES}
 
 
-def bundled_get_story_progress(db_path: str | None = None) -> dict:
+def bundled_get_story_progress(db_path: str = "cato_mind.db") -> dict:
     import sqlite3
 
-    db_path = db_path or get_db_path()
     out: dict = {}
     try:
         with sqlite3.connect(db_path) as db:
@@ -223,10 +220,9 @@ def bundled_get_story_progress(db_path: str | None = None) -> dict:
     return out
 
 
-def bundled_save_story_result(story_id: str, score: int, total: int, db_path: str | None = None) -> None:
+def bundled_save_story_result(story_id: str, score: int, total: int, db_path: str = "cato_mind.db") -> None:
     import sqlite3
 
-    db_path = db_path or get_db_path()
     total = max(int(total or 0), 1)
     score = max(0, min(int(score or 0), total))
     pct = int(round(100 * score / total))
@@ -246,8 +242,7 @@ def bundled_save_story_result(story_id: str, score: int, total: int, db_path: st
         )
 
 
-def bundled_stories_api_payload(elo: int, db_path: str | None = None) -> list:
-    db_path = db_path or get_db_path()
+def bundled_stories_api_payload(elo: int, db_path: str = "cato_mind.db") -> list:
     progress = bundled_get_story_progress(db_path)
     out = []
     for s in BUNDLED_STORIES:
