@@ -7,6 +7,7 @@ export default function ReviewPage() {
   const {
     aiCoachPlan, adaptive, nextBestLesson, weakSkills, setWeakSkills,
     reviewQueue, setReviewQueue, setNextBestLesson, practicePrompt,
+    mistakes, clearMistakes,
   } = useApp()
 
   useEffect(() => {
@@ -52,6 +53,23 @@ export default function ReviewPage() {
               onClick={() => practicePrompt(nextBestLesson!.recommended_prompt)}>
               Practice recommended prompt
             </button>
+          )}
+        </div>
+      )}
+
+      {mistakes.length > 0 && (
+        <div style={{padding:'10px 12px',background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:12,marginBottom:14}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+            <div style={{fontSize:12,fontWeight:800,color:'var(--blue-b)'}}>Recent mistakes ({mistakes.length})</div>
+            <button className="check-btn default" style={{padding:'4px 10px',fontSize:11,width:'auto'}} onClick={clearMistakes}>
+              Clear all
+            </button>
+          </div>
+          {mistakes.slice(0,5).map((m, i) => (
+            <div key={i} style={{fontSize:12,color:'var(--t2)',marginBottom:2}}>• {m.prompt} — {m.note}</div>
+          ))}
+          {mistakes.length > 5 && (
+            <div style={{fontSize:11,color:'var(--t3)',marginTop:4}}>+{mistakes.length - 5} more</div>
           )}
         </div>
       )}
