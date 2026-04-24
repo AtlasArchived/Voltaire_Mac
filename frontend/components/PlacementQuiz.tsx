@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { api } from '../lib/api'
-import LoadingSkeleton from './LoadingSkeleton'
+import { SkeletonQuestion as LoadingSkeleton } from './LoadingSkeleton'
 import { motion, AnimatePresence } from 'framer-motion'
 
 interface QuizQuestion {

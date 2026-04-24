@@ -46,20 +46,20 @@ export async function syncCompletedFromServer(): Promise<{ units: Set<string>; g
 }
 
 export function markUnitComplete(unitId: string): void {
-  const s = new Set(readLocal(KEY)); s.add(unitId); writeLocal(KEY, [...s])
+  const s = new Set(readLocal(KEY)); s.add(unitId); writeLocal(KEY, Array.from(s))
   fetch(`/api/units/${encodeURIComponent(unitId)}/complete`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'unit' }),
   }).catch(() => {})
 }
 
 export function markGrammarComplete(id: string): void {
-  const s = new Set(readLocal(GRAMMAR_KEY)); s.add(id); writeLocal(GRAMMAR_KEY, [...s])
+  const s = new Set(readLocal(GRAMMAR_KEY)); s.add(id); writeLocal(GRAMMAR_KEY, Array.from(s))
   fetch(`/api/units/${encodeURIComponent(id)}/complete`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'grammar' }),
   }).catch(() => {})
 }
 
 export function resetUnit(unitId: string): void {
-  const s = new Set(readLocal(KEY)); s.delete(unitId); writeLocal(KEY, [...s])
+  const s = new Set(readLocal(KEY)); s.delete(unitId); writeLocal(KEY, Array.from(s))
   fetch(`/api/units/${encodeURIComponent(unitId)}/complete`, { method: 'DELETE' }).catch(() => {})
 }

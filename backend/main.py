@@ -1483,6 +1483,15 @@ def complete_story(story_id: str, score: int, total: int):
 
 # ── Onboarding ────────────────────────────────────────────────────────────────
 
+@app.get("/api/onboarding/placement-quiz")
+def get_placement_quiz_endpoint():
+    try:
+        from placement_quiz import get_placement_quiz
+        return get_placement_quiz()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.get("/api/onboarding/status")
 def onboarding_status():
     try:
@@ -1529,6 +1538,35 @@ def complete_onboarding(req: OnboardingRequest):
             )
             db.execute("UPDATE streak_state SET daily_goal_xp=? WHERE id=1", (req.daily_xp,))
         return {"ok": True}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── Memory log ────────────────────────────────────────────────────────────────
+
+@app.get("/api/memory/log")
+def memory_log(limit: int = 50):
+    try:
+        _ensure_core_db()
+        import sqlite3
+        with sqlite3.connect("cato_mind.db") as db:
+            rows = db.execute(
+                """SELECT id, unit_id, cefr, accuracy_pct, xp_earned, finished_at
+                   FROM lesson_log ORDER BY finished_at DESC LIMIT ?""",
+                (limit,)
+            ).fetchall()
+        items = [
+            {
+                "id": r[0],
+                "lesson_id": r[1] or "lesson",
+                "source": "lesson",
+                "title": f"{r[2]} Lesson — {r[1] or 'General'}",
+                "detail": f"{r[3]}% accuracy · {r[4]} XP",
+                "created_at": r[5] or "",
+            }
+            for r in rows
+        ]
+        return {"items": items}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

@@ -274,6 +274,33 @@ export interface AiCoachPlan {
   blocks: string[]
 }
 
+export interface LeaderboardEntry {
+  rank:          number
+  name:          string
+  xp:            number
+  isCurrentUser: boolean
+}
+
+export interface LessonMemoryItem {
+  id:         number
+  lesson_id:  string
+  source:     string
+  title:      string
+  detail?:    string
+  created_at: string
+}
+
+export interface PlacementQuizQuestion {
+  question: string
+  options:  string[]
+  answer:   string
+}
+
+export interface PlacementQuiz {
+  title:     string
+  questions: PlacementQuizQuestion[]
+}
+
 // ── API calls ─────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -383,6 +410,7 @@ export const api = {
     post<{ ok: boolean }>(`/stories/${id}/complete?score=${score}&total=${total}`),
 
   // Onboarding
+  getPlacementQuiz:    () => get<PlacementQuiz>('/onboarding/placement-quiz'),
   getOnboardingStatus: () => get<{ onboarded: boolean }>('/onboarding/status'),
   completeOnboarding:  (data: {
     name: string; goal: string; daily_xp: number; placement_score: number
@@ -394,6 +422,21 @@ export const api = {
 
   // Brief
   generateBrief: () => post<{ ok: boolean }>('/brief/generate'),
+
+  // Memory log (lesson history)
+  getLessonMemory: (limit = 50) =>
+    get<{ items: LessonMemoryItem[] }>(`/memory/log?limit=${limit}`),
+
+  // Hover translation (uses existing word lookup)
+  hoverTranslation: async (word: string, pair: string): Promise<{ text: string }> => {
+    try {
+      const direction = pair.startsWith('en') ? 'en-fr' : 'fr-en'
+      const r = await get<WordLookup>(`/word/${encodeURIComponent(word)}?direction=${direction}`)
+      return { text: r.english || r.french || word }
+    } catch {
+      return { text: '—' }
+    }
+  },
 }
 
 // ── Streaming helper ──────────────────────────────────────────────────────────
@@ -432,5 +475,16 @@ export async function streamLesson(
     onDone()
   } catch (err) {
     onError(String(err))
+  }
+}
+
+// ── Named exports for components that import directly ─────────────────────────
+
+export async function getLeaderboard(_period: 'week' | 'alltime'): Promise<LeaderboardEntry[]> {
+  try {
+    const learner = await api.getLearner()
+    return [{ rank: 1, name: learner.name, xp: learner.xp, isCurrentUser: true }]
+  } catch {
+    return []
   }
 }

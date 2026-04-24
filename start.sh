@@ -4,6 +4,10 @@
 #  Usage: double-click in Finder, or run: ./start.sh
 # ─────────────────────────────────────────────────────────────
 
+HEADLESS=false
+[ "${1:-}" = "--headless" ] && HEADLESS=true
+ANYWHERE="${VOLTAIRE_ANYWHERE:-1}"
+
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"
 clear
@@ -112,6 +116,17 @@ cleanup_port() {
   fi
 }
 
+stop_voltaire() {
+  echo ""
+  echo "  Stopping Voltaire (freeing ports 8000 and 3000)..."
+  if [ -x "$DIR/tunnel.sh" ]; then
+    "$DIR/tunnel.sh" --stop >/dev/null 2>&1 || true
+  fi
+  cleanup_port 8000
+  cleanup_port 3000
+}
+
+
 # ── Preflight ports ──────────────────────────────────────────
 cleanup_port 8000
 cleanup_port 3000
@@ -152,11 +167,33 @@ echo "  Opening browser..."
 open http://localhost:3000
 
 LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null)
+PUBLIC_URL=""
+
+# ── Anywhere access (auto Cloudflare tunnel; disable with VOLTAIRE_ANYWHERE=0) ──
+if [ "$ANYWHERE" = "1" ] && [ -x "$DIR/tunnel.sh" ]; then
+  echo "  Starting secure public tunnel for anywhere phone access..."
+  "$DIR/tunnel.sh" --background >>"$DIR/logs/launcher.log" 2>&1 || true
+  if [ -f "$DIR/logs/public_url.txt" ]; then
+    PUBLIC_URL="$(<"$DIR/logs/public_url.txt")"
+  fi
+fi
+
+if [ "$HEADLESS" = true ]; then
+  echo "  Headless launch complete at $(date '+%Y-%m-%d %H:%M:%S')"
+  if [ -n "$PUBLIC_URL" ]; then
+    osascript -e "display notification \"$PUBLIC_URL\" with title \"Voltaire public link\""
+  else
+    osascript -e 'display notification "Voltaire is running — desktop app or localhost:3000" with title "Voltaire"'
+  fi
+  exit 0
+fi
+
 
 echo ""
 echo "  Voltaire is running!"
 echo "  Browser:  http://localhost:3000"
 [ -n "$LOCAL_IP" ] && echo "  Phone:    http://$LOCAL_IP:3000"
-echo "  Anywhere: run ./tunnel.sh"
+[ -n "$PUBLIC_URL" ] && echo "  Anywhere: $PUBLIC_URL"
+echo "  Logs:     $DIR/logs/"
 echo ""
 echo "  Close the backend/frontend Terminal windows to stop."

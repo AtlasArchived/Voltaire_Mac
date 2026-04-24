@@ -79,7 +79,7 @@ export default function WordTap({ text, isHtml, className, style }: WordTapProps
       cacheRef.current[clean] = data
       setTooltip(prev => prev?.word === clean ? { ...prev, data, loading: false } : prev)
     } catch {
-      const fallback: WordLookup = { french: clean, english: '—', note: null, is_cognate: false, found: false }
+      const fallback: WordLookup = { french: clean, english: '—', direction: 'fr-en', note: null, is_cognate: false, found: false }
       setTooltip(prev => prev?.word === clean ? { ...prev, loading: false, data: fallback } : prev)
     }
   }, [])

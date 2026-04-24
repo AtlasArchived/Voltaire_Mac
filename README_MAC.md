@@ -45,11 +45,20 @@ on your phone while connected to the same WiFi.
 
 ## Access from anywhere (Cloudflare Tunnel)
 
-In a new Terminal window, while Voltaire is running:
+`start.sh` now auto-starts a Cloudflare tunnel by default and prints:
+```bash
+Anywhere: https://xxx-xxx.trycloudflare.com
+```
+Open that URL on your phone from any network, as long as Voltaire is running on your Mac.
+
+Manual mode (optional):
 ```bash
 ~/Desktop/voltaire/tunnel.sh
 ```
-Copy the `https://xxx-xxx.trycloudflare.com` URL — works on any network.
+Disable auto-tunnel for one launch:
+```bash
+VOLTAIRE_ANYWHERE=0 ./start.sh
+```
 
 ---
 

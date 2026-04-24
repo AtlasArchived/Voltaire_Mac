@@ -206,14 +206,17 @@ const GRAMMAR_NODES: GrammarNode[] = [
     ],
   },
 
-  // ── B2/C1/C2 placeholders ─────────────────────────────────────────────────
+  // ── B2 Grammar 1 ──────────────────────────────────────────────────────────
   {
-    id: 'b2-g1', level: 'B2',
-    title: 'Grammar Checkpoint 1', subtitle: 'Linking ideas',
+    id: 'b2-g1',
+    level: 'B2',
+    title: 'Grammar Checkpoint 1',
+    subtitle: 'Expressing doubt, emotion & necessity',
     concept: 'Subjonctif',
     explanation: [
       'The subjonctif expresses doubt, emotion, necessity, or subjective judgment. It\'s triggered by specific phrases and conjunctions.',
-      'Common triggers: il faut que, je veux que, bien que, pour que, à condition que.',
+      'Common triggers: il faut que, je veux que, bien que, pour que, à condition que, quoique, avant que.',
+      'Formation: take the ils/elles form of the present, remove -ent, add -e, -es, -e, -ions, -iez, -ent. Irregular stems: être → soi-, avoir → ai-/ay-, aller → aill-/all-.',
     ],
     table: {
       header: ['Trigger phrase', 'Example'],
@@ -222,19 +225,180 @@ const GRAMMAR_NODES: GrammarNode[] = [
         ['Je veux que', 'Je veux qu\'il soit là.'],
         ['Bien que', 'Bien qu\'il pleuve, on sort.'],
         ['Pour que', 'Je parle lentement pour que tu comprennes.'],
+        ['Avant que', 'Finis avant qu\'il parte.'],
+        ['À condition que', 'J\'accepte à condition que tu travailles.'],
       ],
     },
     tip: '🧠 If you can replace the phrase with "it is important/necessary that…", it probably needs the subjonctif.',
     exercises: [
       { id: 'b2g1-1', prompt: 'Fill: "Il faut que tu _____ (venir)."', answer: 'viennes', hint: 'venir is irregular in subjonctif.', note: 'venir → viennes (subjonctif)' },
       { id: 'b2g1-2', prompt: 'Does "Je pense que" require the subjonctif?', answer: 'Non', options: ['Oui', 'Non', 'Parfois', 'Toujours'], hint: '"penser que" expresses certainty.', note: 'penser que → indicatif' },
+      { id: 'b2g1-3', prompt: 'Fill: "Bien qu\'il _____ (être) fatigué, il continue."', answer: 'soit', hint: 'être → soit in subjonctif.', note: 'être → soit (subjonctif irrégulier)' },
+      { id: 'b2g1-4', prompt: 'Fill: "Je veux que vous _____ (finir) avant midi."', answer: 'finissiez', hint: 'Regular -ir verb: finir → ils finissent → finiss- + -iez.', note: 'finir → finissiez (subjonctif)' },
+      { id: 'b2g1-5', prompt: 'Which triggers the subjonctif?', answer: 'avant que', options: ['parce que', 'avant que', 'depuis que', 'pendant que'], hint: 'Only conjunctions of time/concession/purpose use subjonctif.', note: 'avant que → subjonctif' },
+      { id: 'b2g1-6', prompt: 'Translate: "I\'m surprised that she didn\'t come."', answer: 'Je suis surpris qu\'elle ne soit pas venue.', hint: 'Surprise triggers subjonctif. Use subjonctif passé for the completed action.', note: 'être surpris que → subjonctif passé' },
     ],
   },
-  { id: 'b2-g2', level: 'B2', title: 'Grammar Checkpoint 2', subtitle: 'Passive & Causative', concept: 'Voix passive & faire causatif', explanation: ['La voix passive: Le sujet reçoit l\'action. Formation: être + participe passé.', 'Le causatif: faire + infinitif exprime qu\'on fait faire quelque chose par quelqu\'un d\'autre.'], tip: '🧠 "Je fais couper mes cheveux" = I have my hair cut (someone does it for me).', exercises: [{ id: 'b2g2-1', prompt: 'Mettez à la voix passive: "Le chef cuisine le repas."', answer: 'Le repas est cuisiné par le chef.', hint: 'être + participe passé + par.', note: 'Voix passive: être + pp' }] },
-  { id: 'c1-g1', level: 'C1', title: 'Grammar Checkpoint 1', subtitle: 'Nuancing register', concept: 'Registre & Niveaux de langue', explanation: ['French has distinct registers: familier, courant, soutenu. The same idea expressed at different levels signals education and social awareness.'], tip: '🧠 "boulot" (fam) = "travail" (courant) = "emploi" (soutenu) — all mean "work/job".', exercises: [{ id: 'c1g1-1', prompt: 'What is the formal equivalent of "bosser"?', answer: 'travailler', options: ['travailler', 'boulotter', 'œuvrer', 'faire'], hint: 'Think standard dictionary verb for "to work".', note: 'bosser (fam) → travailler (courant)' }] },
-  { id: 'c1-g2', level: 'C1', title: 'Grammar Checkpoint 2', subtitle: 'Advanced linking', concept: 'Participe présent & Gérondif', explanation: ['Participe présent: verb + -ant (like English -ing). Gérondif: en + participe présent (while doing, by doing).'], tip: '🧠 "En travaillant, il écoute la radio." = While working, he listens to the radio.', exercises: [{ id: 'c1g2-1', prompt: 'Translate: "By practicing every day, she improved."', answer: 'En pratiquant tous les jours, elle s\'est améliorée.', hint: 'Gérondif: en + participe présent.', note: 'en + pratiquant = gérondif' }] },
-  { id: 'c2-g1', level: 'C2', title: 'Grammar Checkpoint 1', subtitle: 'Rare but elegant', concept: 'Subjonctif passé & Concordance des temps', explanation: ['At C2 level, mastering sequence of tenses (concordance des temps) is essential for formal writing and speech.'], tip: '🧠 In subordinate clauses, the tense must logically match the main clause tense.', exercises: [{ id: 'c2g1-1', prompt: 'Fill: "Bien qu\'elle _____ (partir) tôt, elle est arrivée en retard."', answer: 'soit partie', hint: 'Bien que + subjonctif passé (completed action).', note: 'subjonctif passé: soit + participe passé' }] },
-  { id: 'c2-g2', level: 'C2', title: 'Grammar Checkpoint 2', subtitle: 'Mastery of nuance', concept: 'Figures de style', explanation: ['Literary French uses rhetorical devices: anaphore, chiasme, litote, euphémisme. Recognizing them is required for the C2 DALF exam.'], tip: '🧠 Litote: saying less to mean more. "Ce n\'est pas mauvais" = it\'s actually quite good.', exercises: [{ id: 'c2g2-1', prompt: '"Ce n\'est pas sans intérêt" is an example of which device?', answer: 'litote', options: ['métaphore', 'litote', 'anaphore', 'chiasme'], hint: 'Understatement via negation.', note: 'Litote = understatement' }] },
+
+  // ── B2 Grammar 2 ──────────────────────────────────────────────────────────
+  {
+    id: 'b2-g2',
+    level: 'B2',
+    title: 'Grammar Checkpoint 2',
+    subtitle: 'Passive voice & causative constructions',
+    concept: 'Voix passive & Faire causatif',
+    explanation: [
+      'La voix passive: the subject receives the action instead of performing it. Formation: être + past participle (agreeing with subject) + par + agent.',
+      'The causative (faire + infinitive) expresses that the subject has someone else do the action for them: "Je fais réparer ma voiture" = I have my car repaired.',
+      'Both are common in formal writing and press. The passive is also frequently replaced by "on" in conversational French.',
+    ],
+    table: {
+      header: ['Structure', 'Example', 'English'],
+      rows: [
+        ['Active', 'Le chef prépare le repas.', 'The chef prepares the meal.'],
+        ['Passive', 'Le repas est préparé par le chef.', 'The meal is prepared by the chef.'],
+        ['Passive (past)', 'La lettre a été envoyée.', 'The letter was sent.'],
+        ['Causatif', 'Je fais couper mes cheveux.', 'I have my hair cut.'],
+        ['Causatif + agent', 'Elle fait réparer la voiture par le garagiste.', 'She has the car fixed by the mechanic.'],
+      ],
+    },
+    tip: '🧠 "Je fais couper mes cheveux" = someone cuts my hair for me. "Je coupe mes cheveux" = I cut my own hair.',
+    exercises: [
+      { id: 'b2g2-1', prompt: 'Mettez à la voix passive: "Le chef cuisine le repas."', answer: 'Le repas est cuisiné par le chef.', hint: 'être + participe passé + par.', note: 'Voix passive: être + pp + par' },
+      { id: 'b2g2-2', prompt: 'Mettez à la voix passive: "Les élèves ont résolu le problème."', answer: 'Le problème a été résolu par les élèves.', hint: 'Past passive: avoir été + pp.', note: 'Passé passif: a été + résolu' },
+      { id: 'b2g2-3', prompt: 'Does the past participle agree with the subject in the passive?', answer: 'Oui', options: ['Oui', 'Non', 'Parfois', 'Jamais'], hint: 'In the passive, être is the auxiliary — it always triggers agreement.', note: 'Être passive → pp agrees with subject' },
+      { id: 'b2g2-4', prompt: 'Translate using faire causatif: "She has the house painted."', answer: 'Elle fait peindre la maison.', hint: 'faire + infinitif. No agreement with the following noun.', note: 'faire + peindre (causatif)' },
+      { id: 'b2g2-5', prompt: 'Fill: "On _____ (construire) ce pont en 1890." — voix passive implicite.', answer: 'a construit', hint: 'In French, "on + active" often replaces the passive in speech.', note: 'on + passé composé replaces passive colloquially' },
+    ],
+  },
+
+  // ── C1 Grammar 1 ──────────────────────────────────────────────────────────
+  {
+    id: 'c1-g1',
+    level: 'C1',
+    title: 'Grammar Checkpoint 1',
+    subtitle: 'Speaking and writing at the right level',
+    concept: 'Registre & Niveaux de langue',
+    explanation: [
+      'French has distinct registers: familier (informal), courant (standard), and soutenu (formal/literary). Choosing the right register signals education and social awareness.',
+      'In spoken French, many grammar rules are relaxed: "ne" is often dropped in negation, "tu" replaces "vous" among peers, liaisons are skipped.',
+      'In written and formal French: double negation is maintained (ne...pas), subjunctives appear, and vocabulary is elevated.',
+    ],
+    table: {
+      header: ['Familier', 'Courant', 'Soutenu'],
+      rows: [
+        ['boulot', 'travail', 'emploi / labeur'],
+        ['bosser', 'travailler', 'œuvrer'],
+        ['mec / gars', 'homme / garçon', 'individu / monsieur'],
+        ['c\'est pas bien', 'ce n\'est pas bien', 'cela n\'est guère convenable'],
+        ['j\'sais pas', 'je ne sais pas', 'je l\'ignore'],
+        ['kiffer', 'aimer', 'apprécier / affectionner'],
+      ],
+    },
+    tip: '🧠 "boulot" (fam) = "travail" (courant) = "emploi" (soutenu) — all mean "work/job".',
+    exercises: [
+      { id: 'c1g1-1', prompt: 'What is the formal equivalent of "bosser"?', answer: 'travailler', options: ['travailler', 'boulotter', 'œuvrer', 'faire'], hint: 'Think standard dictionary verb for "to work".', note: 'bosser (fam) → travailler (courant)' },
+      { id: 'c1g1-2', prompt: 'Which is the most soutenu way to say "I don\'t know"?', answer: 'Je l\'ignore.', options: ['Je sais pas.', 'Je ne sais pas.', 'Je l\'ignore.', 'J\'ai aucune idée.'], hint: 'soutenu uses elevated vocabulary and full negation.', note: 'ignorer = not know (soutenu)' },
+      { id: 'c1g1-3', prompt: 'In formal speech, which rule must NOT be dropped?', answer: 'ne in negation', options: ['ne in negation', 'liaison after "et"', 'elision of "le"', 'agreement of adjectives'], hint: '"Je sais pas" is familier — "je ne sais pas" is required in writing.', note: 'ne-pas: never drop "ne" in soutenu' },
+      { id: 'c1g1-4', prompt: 'Elevate this sentence to soutenu: "C\'est super comme idée."', answer: 'C\'est une idée remarquable.', hint: 'Replace "super" (fam) with a formal adjective.', note: 'super → remarquable / excellente' },
+      { id: 'c1g1-5', prompt: 'Which register uses "ne...guère" as a negation?', answer: 'soutenu', options: ['familier', 'courant', 'soutenu', 'argot'], hint: 'ne...guère means "hardly/scarcely" — only in elevated writing.', note: 'ne...guère = soutenu negation' },
+    ],
+  },
+
+  // ── C1 Grammar 2 ──────────────────────────────────────────────────────────
+  {
+    id: 'c1-g2',
+    level: 'C1',
+    title: 'Grammar Checkpoint 2',
+    subtitle: 'Linking actions with verbal nouns',
+    concept: 'Participe présent & Gérondif',
+    explanation: [
+      'The participe présent (present participle) is formed by taking the nous form of the present tense, removing -ons, and adding -ant. It functions like an adjective or adverb.',
+      'The gérondif adds "en" before the participe présent and means "while doing" or "by doing". Both subject and the gérondif action must share the same subject.',
+      'Three common irregulars: être → étant, avoir → ayant, savoir → sachant.',
+    ],
+    table: {
+      header: ['Form', 'Formation', 'Example'],
+      rows: [
+        ['Participe présent', 'nous form - ons + ant', 'parlant, finissant, vendant'],
+        ['Gérondif', 'en + participe présent', 'en parlant, en finissant'],
+        ['Étant (être)', 'irregular', 'Étant malade, il reste chez lui.'],
+        ['Ayant (avoir)', 'irregular', 'Ayant fini, elle est sortie.'],
+        ['Sachant (savoir)', 'irregular', 'Sachant la vérité, il se tut.'],
+      ],
+    },
+    tip: '🧠 "En travaillant, il écoute la radio." = While working, he listens to the radio. Both actions share the same subject (il).',
+    exercises: [
+      { id: 'c1g2-1', prompt: 'Translate: "By practicing every day, she improved."', answer: 'En pratiquant tous les jours, elle s\'est améliorée.', hint: 'Gérondif: en + participe présent.', note: 'en + pratiquant = gérondif' },
+      { id: 'c1g2-2', prompt: 'Form the participe présent of "finir".', answer: 'finissant', hint: 'nous finissons → finiss- + ant.', note: 'finir → finissant' },
+      { id: 'c1g2-3', prompt: 'What is the participe présent of "être"?', answer: 'étant', options: ['étant', 'être', 'soyant', 'estant'], hint: 'Irregular — must be memorized.', note: 'être → étant (irrégulier)' },
+      { id: 'c1g2-4', prompt: 'Fill: "_____ (savoir) qu\'il avait tort, elle n\'insista pas." (participe présent)', answer: 'Sachant', hint: 'savoir → sachant (irregular).', note: 'savoir → sachant' },
+      { id: 'c1g2-5', prompt: 'Which sentence is grammatically correct?', answer: 'En chantant, elle cuisine.', options: ['En chantant, la cuisine est faite.', 'En chantant, elle cuisine.', 'En chantant par elle, la maison résonne.', 'Chantant par lui, la rue est animée.'], hint: 'The gérondif subject and main clause subject must be the same person.', note: 'Gérondif requires same subject in both clauses' },
+    ],
+  },
+
+  // ── C2 Grammar 1 ──────────────────────────────────────────────────────────
+  {
+    id: 'c2-g1',
+    level: 'C2',
+    title: 'Grammar Checkpoint 1',
+    subtitle: 'Mastering sequence of tenses',
+    concept: 'Subjonctif passé & Concordance des temps',
+    explanation: [
+      'At C2 level, mastering sequence of tenses (concordance des temps) is essential for formal writing and speech.',
+      'The subjonctif passé is formed with avoir/être in the subjonctif présent + past participle. It expresses a completed action in a subjunctive clause.',
+      'In formal/literary French, the subjonctif imparfait and plus-que-parfait replace the présent and passé forms in past contexts — essential for the DALF C2 exam.',
+    ],
+    table: {
+      header: ['Main clause tense', 'Subordinate subjonctif', 'Example'],
+      rows: [
+        ['Present/Future', 'Subjonctif présent', 'Je veux qu\'il vienne.'],
+        ['Present/Future', 'Subjonctif passé', 'Je suis content qu\'elle soit arrivée.'],
+        ['Past (formal)', 'Subjonctif imparfait', 'Il voulait qu\'elle vînt.'],
+        ['Past (formal)', 'Subjonctif plus-que-parfait', 'Il aurait voulu qu\'elle fût venue.'],
+      ],
+    },
+    tip: '🧠 In subordinate clauses, the tense must logically match the main clause tense. The subjonctif imparfait/plus-que-parfait appear mainly in literature and formal essays.',
+    exercises: [
+      { id: 'c2g1-1', prompt: 'Fill: "Bien qu\'elle _____ (partir) tôt, elle est arrivée en retard."', answer: 'soit partie', hint: 'Bien que + subjonctif passé (completed action).', note: 'subjonctif passé: soit + participe passé' },
+      { id: 'c2g1-2', prompt: 'Form the subjonctif passé of "avoir (eu)": "Bien qu\'il _____ beaucoup de chance."', answer: 'ait eu', hint: 'avoir → ait (subj. présent) + eu (pp).', note: 'avoir → ait eu (subjonctif passé)' },
+      { id: 'c2g1-3', prompt: 'Which form is used after a past main verb in literary French?', answer: 'subjonctif imparfait', options: ['subjonctif présent', 'subjonctif imparfait', 'conditionnel passé', 'indicatif imparfait'], hint: 'Formal past sequence requires imparfait du subjonctif.', note: 'Formal past → subjonctif imparfait' },
+      { id: 'c2g1-4', prompt: 'Translate formally: "He wanted her to come." (literary)', answer: 'Il voulait qu\'elle vînt.', hint: 'venir → subjonctif imparfait (3sg) = vînt.', note: 'venir → vînt (subjonctif imparfait, littéraire)' },
+      { id: 'c2g1-5', prompt: 'Fill: "Je regrette qu\'elle _____ (ne pas pouvoir) assister à la cérémonie." (subjonctif passé)', answer: 'n\'ait pas pu', hint: 'subjonctif passé of pouvoir: avoir (ait) + pu.', note: 'pouvoir → n\'ait pas pu (subj. passé négatif)' },
+    ],
+  },
+
+  // ── C2 Grammar 2 ──────────────────────────────────────────────────────────
+  {
+    id: 'c2-g2',
+    level: 'C2',
+    title: 'Grammar Checkpoint 2',
+    subtitle: 'Literary devices in French',
+    concept: 'Figures de style',
+    explanation: [
+      'Literary French uses rhetorical devices (figures de style): anaphore, chiasme, litote, euphémisme, hyperbole, métaphore, oxymore. Recognizing them is required for the C2 DALF exam.',
+      'Litote says less to mean more ("ce n\'est pas mauvais" = it\'s quite good). Hyperbole exaggerates. Euphémisme softens. Anaphore repeats words at the start of clauses. Chiasme reverses the structure (AB → BA).',
+    ],
+    table: {
+      header: ['Figure', 'Definition', 'Example'],
+      rows: [
+        ['Litote', 'Understatement via negation', '"Ce n\'est pas sans intérêt."'],
+        ['Hyperbole', 'Exaggeration', '"Je t\'ai dit mille fois de ranger ta chambre."'],
+        ['Euphémisme', 'Softening unpleasant reality', '"Il nous a quittés." (He died.)'],
+        ['Anaphore', 'Repetition at start of clauses', '"Liberté, égalité, fraternité."'],
+        ['Chiasme', 'Inverted parallel structure AB/BA', '"Il faut manger pour vivre, non vivre pour manger."'],
+        ['Oxymore', 'Contradictory terms together', '"Cette obscure clarté…" (Corneille)'],
+      ],
+    },
+    tip: '🧠 Litote: saying less to mean more. "Ce n\'est pas mauvais" = it\'s actually quite good.',
+    exercises: [
+      { id: 'c2g2-1', prompt: '"Ce n\'est pas sans intérêt" is an example of which device?', answer: 'litote', options: ['métaphore', 'litote', 'anaphore', 'chiasme'], hint: 'Understatement via negation.', note: 'Litote = understatement' },
+      { id: 'c2g2-2', prompt: 'Identify the figure: "Je t\'ai répété mille fois de fermer la porte."', answer: 'hyperbole', options: ['litote', 'hyperbole', 'euphémisme', 'oxymore'], hint: '"Mille fois" is clearly an exaggeration.', note: 'Hyperbole = exaggeration' },
+      { id: 'c2g2-3', prompt: 'Which figure softens the word "mourir" into "nous quitter"?', answer: 'euphémisme', options: ['litote', 'anaphore', 'euphémisme', 'chiasme'], hint: 'Replacing a harsh reality with a gentler expression.', note: 'Euphémisme = polite softening' },
+      { id: 'c2g2-4', prompt: '"Il faut manger pour vivre, non vivre pour manger." — Which device?', answer: 'chiasme', options: ['anaphore', 'oxymore', 'chiasme', 'euphémisme'], hint: 'Notice the AB / BA inversion of "manger" and "vivre".', note: 'Chiasme = inverted parallel (AB→BA)' },
+      { id: 'c2g2-5', prompt: 'Identify: "Cette obscure clarté qui tombe des étoiles." (Corneille)', answer: 'oxymore', options: ['métaphore', 'oxymore', 'litote', 'anaphore'], hint: '"Obscure clarté" = dark light — two contradictory terms.', note: 'Oxymore = contradictory terms combined' },
+    ],
+  },
 ]
 
 export function getGrammarNode(id: string): GrammarNode | undefined {

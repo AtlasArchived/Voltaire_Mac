@@ -34,7 +34,9 @@ interface AppState {
   missions:      CefrMission[]
   aiCoachPlan:   AiCoachPlan | null
   weakSkills:    WeakSkillItem[]
+  setWeakSkills: (skills: WeakSkillItem[]) => void
   reviewQueue:   ReviewQueueItem[]
+  setReviewQueue: (items: ReviewQueueItem[]) => void
   nextBestLesson: AdaptiveNextLesson | null
   memory:        MemorySummary | null
   mistakes:      Mistake[]
@@ -478,7 +480,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     ready, learner, setLearner: (l: Learner) => setLearner(l),
     streak, setStreak: (s: StreakState) => setStreak(s),
     due, setDue, hearts, xpPop, setXpPop,
-    adaptive, c1Status, c2Status, missions, aiCoachPlan, weakSkills, reviewQueue,
+    adaptive, c1Status, c2Status, missions, aiCoachPlan,
+    weakSkills, setWeakSkills: (skills: WeakSkillItem[]) => setWeakSkills(skills),
+    reviewQueue, setReviewQueue: (items: ReviewQueueItem[]) => setReviewQueue(items),
     nextBestLesson, setNextBestLesson: (n: AdaptiveNextLesson) => setNextBestLesson(n),
     memory,
     mistakes, settingsMap, setSettingsMap, savingSettings,

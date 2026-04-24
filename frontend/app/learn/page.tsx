@@ -46,14 +46,14 @@ export default function LearnPage() {
   function handleLessonComplete(passed: boolean) {
     if (passed && selectedUnit) {
       markUnitComplete(selectedUnit)
-      setCompletedUnits(prev => new Set([...prev, selectedUnit]))
+      setCompletedUnits(prev => new Set(Array.from(prev).concat(selectedUnit)))
     }
   }
 
   function handleGrammarComplete() {
     if (selectedGrammar) {
       markGrammarComplete(selectedGrammar)
-      setCompletedGrammar(prev => new Set([...prev, selectedGrammar]))
+      setCompletedGrammar(prev => new Set(Array.from(prev).concat(selectedGrammar)))
     }
   }
 
