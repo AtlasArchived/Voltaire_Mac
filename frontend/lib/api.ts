@@ -51,10 +51,21 @@ async function del<T>(path: string): Promise<T> {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface Learner {
-  name: string
-  elo:  number
-  xp:   number
-  unit: number
+  name:           string
+  elo:            number
+  xp:             number
+  unit:           number
+  travel_goal?:   string
+  travel_date?:   string
+  daily_minutes?: number
+  placement_cefr?: string
+}
+
+export interface InferredState {
+  frustration_score: number
+  velocity:          number
+  vocab_breadth:     number
+  updated_at:        string
 }
 
 export interface StreakState {
@@ -274,33 +285,6 @@ export interface AiCoachPlan {
   blocks: string[]
 }
 
-export interface LeaderboardEntry {
-  rank:          number
-  name:          string
-  xp:            number
-  isCurrentUser: boolean
-}
-
-export interface LessonMemoryItem {
-  id:         number
-  lesson_id:  string
-  source:     string
-  title:      string
-  detail?:    string
-  created_at: string
-}
-
-export interface PlacementQuizQuestion {
-  question: string
-  options:  string[]
-  answer:   string
-}
-
-export interface PlacementQuiz {
-  title:     string
-  questions: PlacementQuizQuestion[]
-}
-
 // ── API calls ─────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -410,11 +394,33 @@ export const api = {
     post<{ ok: boolean }>(`/stories/${id}/complete?score=${score}&total=${total}`),
 
   // Onboarding
-  getPlacementQuiz:    () => get<PlacementQuiz>('/onboarding/placement-quiz'),
   getOnboardingStatus: () => get<{ onboarded: boolean }>('/onboarding/status'),
   completeOnboarding:  (data: {
     name: string; goal: string; daily_xp: number; placement_score: number
+    travel_goal?: string; travel_date?: string; daily_minutes?: number
   }) => post<{ ok: boolean }>('/onboarding/complete', data),
+
+  // Learner profile engine (v2.8)
+  getInferredState:    () => get<InferredState>('/learner/inferred-state'),
+  recalcInferredState: () => post<InferredState>('/learner/inferred-state/recalculate'),
+  getTopicWeights:     () => get<Record<string, number>>('/personalization/topic-weights'),
+  getNextQuestionHint: () => get<{
+    next_skill: string; next_type: string; cefr: string;
+    difficulty_target: string; topic_weight: Record<string, number>;
+    session_length: number; reason: string
+  }>('/personalization/next-question'),
+  getAdaptiveMastery:  () => get<{ mastery: Record<string, number> }>('/adaptive/mastery'),
+  saveAdaptiveMastery: (mastery: Record<string, number>) =>
+    post<{ ok: boolean }>('/adaptive/mastery', { mastery }),
+  getPerformanceSummary: (days = 14) => get<{
+    days: number; attempts: number; accuracy: number;
+    by_source: Record<string, number>;
+    by_type: { q_type: string; attempts: number; accuracy: number; avg_response_ms: number }[]
+  }>(`/performance/summary?days=${days}`),
+  getPerformanceTrend: (days = 30) => get<{
+    days: number;
+    points: { day: string; attempts: number; accuracy: number; avg_response_ms: number }[]
+  }>(`/performance/trend?days=${days}`),
 
   // Settings
   getSettings:  () => get<{ settings: Record<string, string> }>('/settings'),
@@ -422,21 +428,6 @@ export const api = {
 
   // Brief
   generateBrief: () => post<{ ok: boolean }>('/brief/generate'),
-
-  // Memory log (lesson history)
-  getLessonMemory: (limit = 50) =>
-    get<{ items: LessonMemoryItem[] }>(`/memory/log?limit=${limit}`),
-
-  // Hover translation (uses existing word lookup)
-  hoverTranslation: async (word: string, pair: string): Promise<{ text: string }> => {
-    try {
-      const direction = pair.startsWith('en') ? 'en-fr' : 'fr-en'
-      const r = await get<WordLookup>(`/word/${encodeURIComponent(word)}?direction=${direction}`)
-      return { text: r.english || r.french || word }
-    } catch {
-      return { text: '—' }
-    }
-  },
 }
 
 // ── Streaming helper ──────────────────────────────────────────────────────────
@@ -475,16 +466,5 @@ export async function streamLesson(
     onDone()
   } catch (err) {
     onError(String(err))
-  }
-}
-
-// ── Named exports for components that import directly ─────────────────────────
-
-export async function getLeaderboard(_period: 'week' | 'alltime'): Promise<LeaderboardEntry[]> {
-  try {
-    const learner = await api.getLearner()
-    return [{ rank: 1, name: learner.name, xp: learner.xp, isCurrentUser: true }]
-  } catch {
-    return []
   }
 }

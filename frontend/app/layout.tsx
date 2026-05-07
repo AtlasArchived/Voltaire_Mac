@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
 import './globals.css'
+import './animations.css'
 import { Toaster } from 'react-hot-toast'
 import { AppProvider } from './AppContext'
 import AppShell from './AppShell'

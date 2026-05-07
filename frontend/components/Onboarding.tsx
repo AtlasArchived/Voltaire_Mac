@@ -1,253 +1,185 @@
 'use client'
 /**
- * components/Onboarding.tsx
- * Voltaire — First-Run Onboarding Flow
+ * components/Onboarding.tsx — v2.5
+ * 7 steps: name, why learning, travel goal, travel date, placement test, daily time, summary.
  */
-
 import { useState } from 'react'
 import { api } from '../lib/api'
 import toast from 'react-hot-toast'
 
-interface OnboardingProps {
-  onComplete: () => void
-}
-
-const PLACEMENT_QS = [
-  {
-    q:    'What does "bonjour" mean?',
-    opts: ['Goodbye', 'Hello', 'Please', 'Thank you'],
-    ans:  1, level: 'A1',
-  },
-  {
-    q:    'Complete: "Je ___ français." (I speak French)',
-    opts: ['parle', 'mange', 'suis', 'vais'],
-    ans:  0, level: 'A1',
-  },
-  {
-    q:    'Passé composé of "aller" (to go) for "je":',
-    opts: ["j'ai allé", 'je suis allé', "j'allais", "j'irai"],
-    ans:  1, level: 'A2',
-  },
-  {
-    q:    'Which is correct?',
-    opts: ['Il faut que tu vas', 'Il faut que tu ailles', 'Il faut que tu vas aller', 'Il faut tu ailles'],
-    ans:  1, level: 'B1',
-  },
-  {
-    q:    '"Nonobstant" means:',
-    opts: ['Nevertheless', 'Obviously', 'Immediately', 'Elsewhere'],
-    ans:  0, level: 'B2',
-  },
-]
-
 const GOALS = [
-  { value: 'travel',   label: '🗼', title: 'Live or travel in France',      sub: 'Practical, conversational, survival-first' },
-  { value: 'reading',  label: '📚', title: 'Read French literature',         sub: 'Vocabulary-deep, classical register' },
-  { value: 'career',   label: '💼', title: 'Career / professional use',      sub: 'Formal register, business vocabulary' },
-  { value: 'personal', label: '🧠', title: 'Personal — heritage or family',  sub: 'Cultural, warm, conversational' },
+  {value:'travel',   emoji:'🗼',title:'Live or travel in France',     sub:'Practical, conversational, survival-first'},
+  {value:'reading',  emoji:'📚',title:'Read French literature',        sub:'Vocabulary-deep, classical register'},
+  {value:'career',   emoji:'💼',title:'Career / professional use',     sub:'Formal register, business vocabulary'},
+  {value:'personal', emoji:'🧠',title:'Personal — heritage or family', sub:'Cultural, warm, conversational'},
+]
+const TRAVEL_GOALS = [
+  {value:'trip_to_paris',   emoji:'🗼',city:'Paris',             sub:'Café culture, metro, museums, restaurants'},
+  {value:'trip_to_lyon',    emoji:'🍷',city:'Lyon',              sub:'Food capital, bouchons, Vieux-Lyon'},
+  {value:'trip_to_south',   emoji:'☀️', city:'South of France',  sub:"Côte d'Azur, Provence, outdoor life"},
+  {value:'move_to_france',  emoji:'🏡',city:'Moving to France',  sub:'Admin, housing, healthcare, daily life'},
+  {value:'business_french', emoji:'💼',city:'Business French',   sub:'Meetings, emails, formal register'},
+  {value:'general_fluency', emoji:'🌍',city:'General fluency',   sub:'No specific destination — all-round'},
+]
+const DAILY_MINUTES = [
+  {minutes:5,  label:'5 min', sub:'Quick daily habit',  emoji:'🌱'},
+  {minutes:10, label:'10 min',sub:'Solid foundation',   emoji:'📖'},
+  {minutes:20, label:'20 min',sub:'Real progress',      emoji:'🔥'},
+  {minutes:30, label:'30 min',sub:'Fast improvement',   emoji:'⚡'},
+]
+const XP_MAP: Record<number,number> = {5:25,10:50,20:100,30:200}
+const PLACEMENT_QS = [
+  {q:'What does "bonjour" mean?',opts:['Goodbye','Hello','Please','Thank you'],ans:1,level:'A1'},
+  {q:'Complete: "Je ___ français."',opts:['parle','mange','suis','vais'],ans:0,level:'A1'},
+  {q:'Passé composé of "aller" for "je":',opts:["j'ai allé",'je suis allé',"j'allais","j'irai"],ans:1,level:'A2'},
+  {q:'Which is correct?',opts:['Il faut que tu vas','Il faut que tu ailles','Il faut que tu vas aller','Il faut tu ailles'],ans:1,level:'B1'},
+  {q:'"Nonobstant" means:',opts:['Nevertheless','Obviously','Immediately','Elsewhere'],ans:0,level:'B2'},
 ]
 
-const XP_GOALS = [
-  { xp: 25,  label: '🌱', title: 'Casual', sub: '~5 min/day' },
-  { xp: 50,  label: '📖', title: 'Regular', sub: '~15 min/day' },
-  { xp: 100, label: '🔥', title: 'Serious', sub: '~30 min/day' },
-  { xp: 200, label: '⚡', title: 'Intensive', sub: '~1 hour/day' },
-]
+export default function Onboarding({onComplete}:{onComplete:()=>void}) {
+  const [step,setStep]=useState(0)
+  const [name,setName]=useState('')
+  const [goal,setGoal]=useState('')
+  const [travelGoal,setTravelGoal]=useState('')
+  const [travelDate,setTravelDate]=useState('')
+  const [dailyMinutes,setDailyMinutes]=useState(10)
+  const [answers,setAnswers]=useState<number[]>([])
+  const [loading,setLoading]=useState(false)
+  const TOTAL=7
 
-export default function Onboarding({ onComplete }: OnboardingProps) {
-  const [step,    setStep]    = useState(0)
-  const [name,    setName]    = useState('')
-  const [goal,    setGoal]    = useState('')
-  const [xp,      setXp]      = useState(50)
-  const [answers, setAnswers] = useState<number[]>([])
-  const [loading, setLoading] = useState(false)
+  const correct=answers.filter((a,i)=>a===PLACEMENT_QS[i]?.ans).length
+  const startElo=800+correct*80
+  const xp=XP_MAP[dailyMinutes]??50
 
-  const totalSteps = 5
-  const correct    = answers.filter((a, i) => a === PLACEMENT_QS[i]?.ans).length
-  const startElo   = 800 + correct * 80
-
-  async function finish() {
+  async function finish(){
     setLoading(true)
     try {
-      await api.completeOnboarding({
-        name, goal, daily_xp: xp, placement_score: correct,
-      })
-      toast.success(`Bienvenue, ${name}! Voltaire is ready.`)
+      await api.completeOnboarding({name,goal,daily_xp:xp,placement_score:correct,travel_goal:travelGoal||'general_fluency',travel_date:travelDate,daily_minutes:dailyMinutes})
+      toast.success(`Bienvenue, ${name}! Voltaire est prêt.`)
       onComplete()
-    } catch (err) {
-      toast.error('Setup failed — please try again')
-    } finally {
-      setLoading(false)
-    }
+    } catch { toast.error('Setup failed — please try again') }
+    finally { setLoading(false) }
   }
 
-  // ── Background ─────────────────────────────────────────────────────────────
-  return (
-    <div style={{
-      position:   'fixed', inset: 0,
-      background: 'var(--bg)',
-      display:    'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center',
-      padding:    '24px', zIndex: 100,
-      overflowY:  'auto',
-    }}>
+  const s: React.CSSProperties = {
+    position:'fixed',inset:0,background:'var(--bg,#0d1117)',
+    display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+    padding:24,zIndex:100,overflowY:'auto',
+  }
+  const card: React.CSSProperties = {
+    width:'100%',maxWidth:480,background:'var(--s2,#161b22)',
+    border:'1px solid var(--b1,#21262d)',borderRadius:16,padding:'28px 26px',
+    position:'relative',overflow:'hidden',
+  }
+  const btn = (active:boolean):React.CSSProperties => ({
+    display:'flex',alignItems:'center',gap:12,width:'100%',
+    background:active?'var(--blue2,rgba(79,156,249,.12))':'var(--s1,#0d1117)',
+    border:`1.5px solid ${active?'var(--blue,#4f9cf9)':'var(--b1,#21262d)'}`,
+    borderRadius:10,padding:'12px 15px',cursor:'pointer',
+    textAlign:'left',transition:'all .15s',fontFamily:'inherit',
+  })
 
+  return(
+    <div style={s}>
       {/* Logo */}
-      <div style={{ fontFamily: 'var(--serif)', fontSize: '1.1rem', fontWeight: 700,
-                    letterSpacing: '.3em', color: 'var(--blue-bright)',
-                    textShadow: '0 0 24px rgba(79,156,249,.3)', marginBottom: '8px' }}>
-        VOLTAIRE
-      </div>
-      <div style={{ fontSize: '11px', letterSpacing: '.2em', textTransform: 'uppercase',
-                    color: 'var(--t3)', marginBottom: '32px' }}>
-        French Fluency for Life
-      </div>
-
-      {/* Step dots */}
-      <div style={{ display: 'flex', gap: '6px', marginBottom: '28px' }}>
-        {Array.from({ length: totalSteps }).map((_, i) => (
-          <div key={i} style={{
-            width: 8, height: 8, borderRadius: '50%',
-            background: i < step ? 'var(--blue)' : i === step
-              ? 'var(--blue-bright)' : 'var(--b1)',
-            transition: 'all .3s',
-            boxShadow:  i === step ? '0 0 8px rgba(79,156,249,.6)' : 'none',
-          }} />
+      <div style={{fontFamily:'var(--serif,Georgia)',fontSize:'1.1rem',fontWeight:700,letterSpacing:'.3em',color:'var(--blue-bright,#6baeff)',marginBottom:6}}>VOLTAIRE</div>
+      <div style={{fontSize:11,letterSpacing:'.2em',textTransform:'uppercase',color:'var(--t3,#8b949e)',marginBottom:28}}>French Fluency for Life</div>
+      {/* Dots */}
+      <div style={{display:'flex',gap:6,marginBottom:24}}>
+        {Array.from({length:TOTAL}).map((_,i)=>(
+          <div key={i} style={{width:8,height:8,borderRadius:'50%',background:i<step?'var(--blue,#4f9cf9)':i===step?'var(--blue-bright,#6baeff)':'var(--b1,#21262d)',transition:'all .3s',boxShadow:i===step?'0 0 8px rgba(79,156,249,.6)':'none'}}/>
         ))}
       </div>
+      <div style={card}>
+        <div style={{position:'absolute',top:0,left:'10%',right:'10%',height:1,background:'linear-gradient(90deg,transparent,rgba(79,156,249,.3),transparent)'}}/>
 
-      {/* Card */}
-      <div style={{
-        width: '100%', maxWidth: '500px',
-        background: 'var(--s2)', border: '1px solid var(--b1)',
-        borderRadius: '16px', padding: '28px 28px',
-        position: 'relative', overflow: 'hidden',
-      }}>
-        <div style={{
-          position: 'absolute', top: 0, left: '10%', right: '10%', height: '1px',
-          background: 'linear-gradient(90deg,transparent,rgba(79,156,249,.3),transparent)',
-        }} />
-
-        {/* ── Step 0: Welcome ── */}
-        {step === 0 && (
-          <div className="animate-fade-up">
-            <div style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '8px' }}>
-              Bienvenue. Let's get acquainted.
-            </div>
-            <div style={{ fontSize: '14px', color: 'var(--t2)', lineHeight: 1.7, marginBottom: '24px' }}>
-              Voltaire is your personal AI French tutor. It remembers you — your mistakes,
-              your progress, your level — and builds every lesson around you.
-              Unlike Duolingo, there are no levels to grind. Just French.
-            </div>
-            <label style={{ display: 'block', fontSize: '13px', color: 'var(--t3)',
-                             marginBottom: '6px', letterSpacing: '.05em' }}>
-              Your first name
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && name.trim() && setStep(1)}
-              placeholder="Jackson"
-              autoFocus
-              style={{
-                width: '100%', background: 'var(--s1)', border: '1.5px solid var(--b2)',
-                borderRadius: 'var(--r2)', color: 'var(--text)', fontFamily: 'var(--font)',
-                fontSize: '15px', padding: '12px 15px', outline: 'none',
-                transition: 'border-color .2s', marginBottom: '20px',
-              }}
-              onFocus={e => (e.target.style.borderColor = 'var(--blue)')}
-              onBlur={e  => (e.target.style.borderColor = 'var(--b2)')}
-            />
-            <button
-              className="btn-primary"
-              style={{ width: '100%', padding: '12px' }}
-              onClick={() => name.trim() && setStep(1)}
-              disabled={!name.trim()}
-            >
-              Continue →
-            </button>
+        {step===0&&(
+          <div style={{animation:'fadeIn .3s ease'}}>
+            <div style={{fontSize:'1.15rem',fontWeight:600,marginBottom:8}}>Bienvenue. Let's get acquainted.</div>
+            <div style={{fontSize:13,color:'var(--t2,#b1bac4)',lineHeight:1.7,marginBottom:20}}>Voltaire is your personal AI French tutor. It remembers you — your mistakes, your progress, your level — and builds every lesson around you.</div>
+            <label style={{display:'block',fontSize:12,color:'var(--t3,#8b949e)',marginBottom:5}}>Your first name</label>
+            <input type="text" value={name} onChange={e=>setName(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&name.trim()&&setStep(1)}
+              placeholder="Jackson" autoFocus
+              style={{width:'100%',background:'var(--s1,#0d1117)',border:'1.5px solid var(--b2,#30363d)',borderRadius:10,color:'var(--text,#e6edf3)',fontSize:15,padding:'12px 15px',outline:'none',marginBottom:18,boxSizing:'border-box'}}/>
+            <button className="check-btn ready" onClick={()=>name.trim()&&setStep(1)} disabled={!name.trim()}>Continue →</button>
           </div>
         )}
 
-        {/* ── Step 1: Goal ── */}
-        {step === 1 && (
-          <div className="animate-fade-up">
-            <div style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '6px' }}>
-              What's driving you, {name}?
-            </div>
-            <div style={{ fontSize: '13px', color: 'var(--t2)', marginBottom: '20px' }}>
-              This shapes everything — vocabulary priority, Mathieu's conversation topics,
-              the kind of content Voltaire pulls.
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {GOALS.map(g => (
-                <button
-                  key={g.value}
-                  onClick={() => { setGoal(g.value); setStep(2) }}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '14px',
-                    background: goal === g.value ? 'var(--blue2)' : 'var(--s1)',
-                    border:     `1.5px solid ${goal === g.value ? 'var(--blue)' : 'var(--b1)'}`,
-                    borderRadius: 'var(--r2)', padding: '13px 16px', cursor: 'pointer',
-                    textAlign: 'left', transition: 'all .15s', fontFamily: 'var(--font)',
-                  }}
-                >
-                  <span style={{ fontSize: '1.4rem' }}>{g.label}</span>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text)' }}>{g.title}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--t2)', marginTop: '2px' }}>{g.sub}</div>
-                  </div>
+        {step===1&&(
+          <div style={{animation:'slideInRight .3s ease'}}>
+            <div style={{fontSize:'1.15rem',fontWeight:600,marginBottom:6}}>What's driving you, {name}?</div>
+            <div style={{fontSize:12,color:'var(--t2,#b1bac4)',marginBottom:16}}>This shapes vocabulary priority and lesson content.</div>
+            <div style={{display:'flex',flexDirection:'column',gap:8}}>
+              {GOALS.map(g=>(
+                <button key={g.value} onClick={()=>{setGoal(g.value);setStep(2)}} style={btn(goal===g.value)}>
+                  <span style={{fontSize:'1.3rem'}}>{g.emoji}</span>
+                  <div><div style={{fontWeight:600,fontSize:13,color:'var(--text,#e6edf3)'}}>{g.title}</div><div style={{fontSize:11,color:'var(--t2,#b1bac4)',marginTop:2}}>{g.sub}</div></div>
                 </button>
               ))}
             </div>
           </div>
         )}
 
-        {/* ── Step 2: Placement test ── */}
-        {step === 2 && (() => {
-          const qi = answers.length
-          if (qi >= PLACEMENT_QS.length) {
-            return (
-              <div className="animate-fade-up" style={{ textAlign: 'center', padding: '12px 0' }}>
-                <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>
-                  {correct >= 4 ? '🎓' : correct >= 2 ? '📗' : '🌱'}
-                </div>
-                <div style={{ fontFamily: 'var(--serif)', fontSize: '1.3rem',
-                               color: 'var(--blue-bright)', marginBottom: '8px' }}>
-                  {correct >= 4 ? 'Strong foundation' : correct >= 2 ? 'False beginner' : 'Fresh start'}
-                </div>
-                <div style={{ fontSize: '14px', color: 'var(--t2)', marginBottom: '6px' }}>
-                  {correct}/5 correct · Starting ELO: {startElo}
-                </div>
-                <div style={{ fontSize: '13px', color: 'var(--t3)', marginBottom: '24px' }}>
-                  Voltaire will calibrate every lesson to this level.
-                </div>
-                <button className="btn-primary" style={{ width: '100%', padding: '12px' }}
-                        onClick={() => setStep(3)}>
-                  Continue →
+        {step===2&&(
+          <div style={{animation:'slideInRight .3s ease'}}>
+            <div style={{fontSize:'1.15rem',fontWeight:600,marginBottom:6}}>Where are you headed?</div>
+            <div style={{fontSize:12,color:'var(--t2,#b1bac4)',marginBottom:16}}>Voltaire will boost vocabulary for your specific destination.</div>
+            <div style={{display:'flex',flexDirection:'column',gap:7,marginBottom:14}}>
+              {TRAVEL_GOALS.map(g=>(
+                <button key={g.value} onClick={()=>setTravelGoal(g.value)} style={btn(travelGoal===g.value)}>
+                  <span style={{fontSize:'1.2rem',minWidth:22}}>{g.emoji}</span>
+                  <div><div style={{fontWeight:600,fontSize:13,color:'var(--text,#e6edf3)'}}>{g.city}</div><div style={{fontSize:11,color:'var(--t2,#b1bac4)',marginTop:2}}>{g.sub}</div></div>
                 </button>
-              </div>
-            )
-          }
+              ))}
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <button className="check-btn default" style={{flex:1}} onClick={()=>setStep(3)}>Skip</button>
+              <button className="check-btn ready" style={{flex:2}} onClick={()=>travelGoal&&setStep(3)} disabled={!travelGoal}>Continue →</button>
+            </div>
+          </div>
+        )}
 
-          const q = PLACEMENT_QS[qi]
-          return (
-            <div className="animate-fade-up">
-              <div style={{ fontSize: '11px', color: 'var(--t3)', marginBottom: '12px' }}>
-                Placement test · {qi + 1} of {PLACEMENT_QS.length}
+        {step===3&&(
+          <div style={{animation:'slideInRight .3s ease'}}>
+            <div style={{fontSize:'1.15rem',fontWeight:600,marginBottom:6}}>When do you need to be ready?</div>
+            <div style={{fontSize:12,color:'var(--t2,#b1bac4)',marginBottom:16,lineHeight:1.7}}>Voltaire will prioritise the vocabulary you need first. Skip if you don't have a date.</div>
+            <label style={{display:'block',fontSize:12,color:'var(--t3,#8b949e)',marginBottom:5}}>Target date (optional)</label>
+            <input type="date" value={travelDate} onChange={e=>setTravelDate(e.target.value)}
+              min={new Date().toISOString().split('T')[0]}
+              style={{width:'100%',background:'var(--s1,#0d1117)',border:'1.5px solid var(--b2,#30363d)',borderRadius:10,color:'var(--text,#e6edf3)',fontSize:15,padding:'12px 15px',outline:'none',marginBottom:10,boxSizing:'border-box'}}/>
+            {travelDate&&<div style={{fontSize:12,color:'var(--blue,#4f9cf9)',marginBottom:14}}>
+              {Math.max(0,Math.ceil((new Date(travelDate).getTime()-Date.now())/86400000))} days to go
+            </div>}
+            <div style={{display:'flex',gap:8}}>
+              <button className="check-btn default" style={{flex:1}} onClick={()=>setStep(4)}>Skip</button>
+              <button className="check-btn ready" style={{flex:2}} onClick={()=>setStep(4)}>Continue →</button>
+            </div>
+          </div>
+        )}
+
+        {step===4&&(()=>{
+          const qi=answers.length
+          if (qi>=PLACEMENT_QS.length) return(
+            <div style={{animation:'scaleIn .4s ease',textAlign:'center',padding:'10px 0'}}>
+              <div style={{fontSize:'2.5rem',marginBottom:10}}>{correct>=4?'🎓':correct>=2?'📗':'🌱'}</div>
+              <div style={{fontFamily:'var(--serif,Georgia)',fontSize:'1.2rem',color:'var(--blue,#4f9cf9)',marginBottom:6}}>
+                {correct>=4?'Strong foundation':correct>=2?'False beginner':'Fresh start'}
               </div>
-              <div style={{ fontSize: '15px', fontWeight: 500, marginBottom: '20px', lineHeight: 1.5 }}>
-                {q.q}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {q.opts.map((opt, i) => (
-                  <button
-                    key={i}
-                    className="opt-btn"
-                    onClick={() => setAnswers(a => [...a, i])}
-                  >
-                    {opt}
+              <div style={{fontSize:13,color:'var(--t2,#b1bac4)',marginBottom:4}}>{correct}/5 correct · Starting ELO: {startElo}</div>
+              <div style={{fontSize:12,color:'var(--t3,#8b949e)',marginBottom:20}}>Voltaire will calibrate every lesson to this level.</div>
+              <button className="check-btn ready" onClick={()=>setStep(5)}>Continue →</button>
+            </div>
+          )
+          const q=PLACEMENT_QS[qi]
+          return(
+            <div style={{animation:'slideInRight .3s ease'}}>
+              <div style={{fontSize:11,color:'var(--t3,#8b949e)',marginBottom:10}}>Quick placement · {qi+1} of {PLACEMENT_QS.length}</div>
+              <div style={{fontSize:15,fontWeight:500,marginBottom:18,lineHeight:1.5}}>{q.q}</div>
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                {q.opts.map((opt,i)=>(
+                  <button key={i} className="opt" onClick={()=>setAnswers(a=>[...a,i])}>
+                    <span className="opt-letter">{['A','B','C','D'][i]}</span>{opt}
                   </button>
                 ))}
               </div>
@@ -255,86 +187,51 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           )
         })()}
 
-        {/* ── Step 3: Daily goal ── */}
-        {step === 3 && (
-          <div className="animate-fade-up">
-            <div style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '6px' }}>
-              How much can you commit?
-            </div>
-            <div style={{ fontSize: '13px', color: 'var(--t2)', marginBottom: '20px', lineHeight: 1.7 }}>
-              15–20 minutes daily beats 2-hour weekend sessions — research is clear on this.
-              Pick something you'll actually hit.
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '20px' }}>
-              {XP_GOALS.map(g => (
-                <button
-                  key={g.xp}
-                  onClick={() => setXp(g.xp)}
-                  style={{
-                    background:   xp === g.xp ? 'var(--blue2)' : 'var(--s1)',
-                    border:       `1.5px solid ${xp === g.xp ? 'var(--blue)' : 'var(--b1)'}`,
-                    borderRadius: 'var(--r2)', padding: '14px 12px',
-                    textAlign:    'center', cursor: 'pointer',
-                    transition:   'all .15s', fontFamily: 'var(--font)',
-                  }}
-                >
-                  <div style={{ fontSize: '1.4rem', marginBottom: '4px' }}>{g.label}</div>
-                  <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text)' }}>{g.title}</div>
-                  <div style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '2px' }}>{g.sub}</div>
-                  <div style={{ fontSize: '11px', color: 'var(--blue)', marginTop: '4px' }}>{g.xp} XP/day</div>
+        {step===5&&(
+          <div style={{animation:'slideInRight .3s ease'}}>
+            <div style={{fontSize:'1.15rem',fontWeight:600,marginBottom:6}}>How much time each day?</div>
+            <div style={{fontSize:12,color:'var(--t2,#b1bac4)',marginBottom:16,lineHeight:1.7}}>15–20 minutes daily beats 2-hour weekend sessions. Pick something you'll actually hit.</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:18}}>
+              {DAILY_MINUTES.map(g=>(
+                <button key={g.minutes} onClick={()=>setDailyMinutes(g.minutes)} style={{
+                  background:dailyMinutes===g.minutes?'var(--blue2,rgba(79,156,249,.12))':'var(--s1,#0d1117)',
+                  border:`1.5px solid ${dailyMinutes===g.minutes?'var(--blue,#4f9cf9)':'var(--b1,#21262d)'}`,
+                  borderRadius:10,padding:'14px 10px',textAlign:'center',cursor:'pointer',transition:'all .15s',fontFamily:'inherit',
+                }}>
+                  <div style={{fontSize:'1.3rem',marginBottom:3}}>{g.emoji}</div>
+                  <div style={{fontWeight:600,fontSize:13,color:'var(--text,#e6edf3)'}}>{g.label}</div>
+                  <div style={{fontSize:11,color:'var(--t2,#b1bac4)',marginTop:2}}>{g.sub}</div>
+                  <div style={{fontSize:11,color:'var(--blue,#4f9cf9)',marginTop:4}}>{XP_MAP[g.minutes]} XP/day</div>
                 </button>
               ))}
             </div>
-            <button className="btn-primary" style={{ width: '100%', padding: '12px' }}
-                    onClick={() => setStep(4)}>
-              Continue →
-            </button>
+            <button className="check-btn ready" onClick={()=>setStep(6)}>Continue →</button>
           </div>
         )}
 
-        {/* ── Step 4: Summary + launch ── */}
-        {step === 4 && (
-          <div className="animate-fade-up">
-            <div style={{ fontSize: '1.2rem', fontWeight: 600, marginBottom: '6px' }}>
-              Everything's ready, {name}.
-            </div>
-            <div style={{ fontSize: '13px', color: 'var(--t2)', marginBottom: '20px' }}>
-              Here's your profile:
-            </div>
-
-            <div style={{ background: 'var(--s1)', borderRadius: 'var(--r)',
-                           padding: '16px', marginBottom: '20px' }}>
+        {step===6&&(
+          <div style={{animation:'fadeIn .3s ease'}}>
+            <div style={{fontSize:'1.15rem',fontWeight:600,marginBottom:6}}>Everything's ready, {name}.</div>
+            <div style={{background:'var(--s1,#0d1117)',borderRadius:10,padding:'14px',marginBottom:18}}>
               {[
-                ['Name',         name],
-                ['Goal',         GOALS.find(g => g.value === goal)?.title || goal],
-                ['Daily target', `${xp} XP / day`],
+                ['Name', name],
+                ['Goal', GOALS.find(g=>g.value===goal)?.title||goal],
+                ['Destination', TRAVEL_GOALS.find(g=>g.value===travelGoal)?.city||'General'],
+                travelDate?['Target', new Date(travelDate).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})]:null,
+                ['Daily', `${dailyMinutes} min · ${xp} XP/day`],
                 ['Starting ELO', `${startElo} (${correct}/5 placement)`],
-              ].map(([k, v]) => (
-                <div key={k} style={{ display: 'flex', justifyContent: 'space-between',
-                                       padding: '7px 0', borderBottom: '1px solid var(--b1)',
-                                       fontSize: '14px' }}>
-                  <span style={{ color: 'var(--t2)' }}>{k}</span>
-                  <span style={{ color: 'var(--text)', fontWeight: 500 }}>{v}</span>
+              ].filter(Boolean).map(([k,v])=>(
+                <div key={k as string} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid var(--b1,#21262d)',fontSize:13}}>
+                  <span style={{color:'var(--t2,#b1bac4)'}}>{k}</span>
+                  <span style={{color:'var(--text,#e6edf3)',fontWeight:500}}>{v}</span>
                 </div>
               ))}
             </div>
-
-            <div style={{ fontSize: '13px', color: 'var(--t3)', marginBottom: '24px', lineHeight: 1.7 }}>
-              Voltaire remembers everything. The more you use it, the better it knows you.
-            </div>
-
-            <button
-              className="btn-primary"
-              style={{ width: '100%', padding: '13px', fontSize: '15px',
-                        opacity: loading ? .7 : 1 }}
-              onClick={finish}
-              disabled={loading}
-            >
-              {loading ? 'Setting up…' : 'Commencer →'}
+            <button className="check-btn ready" style={{fontSize:15,opacity:loading?.7:1}} onClick={finish} disabled={loading}>
+              {loading?'Setting up…':'Commencer →'}
             </button>
           </div>
         )}
-
       </div>
     </div>
   )
