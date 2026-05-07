@@ -63,10 +63,13 @@ class VoiceRequest(BaseModel):
     context:      str = "conversation"
 
 class OnboardingRequest(BaseModel):
-    name:         str
-    goal:         str
-    daily_xp:     int = 50
+    name:            str
+    goal:            str
+    daily_xp:        int = 50
     placement_score: int = 0
+    travel_goal:     str = ""
+    travel_date:     str = ""
+    daily_minutes:   int = 10
 
 class TTSRequest(BaseModel):
     text:         str
@@ -486,13 +489,24 @@ def health():
 def get_learner():
     try:
         import sqlite3
+        _ensure_core_db()
+        _ensure_learner_profile_schema()
         with sqlite3.connect("cato_mind.db") as db:
             r = db.execute(
-                "SELECT name, elo, xp, unit_level FROM learner LIMIT 1"
+                "SELECT name, elo, xp, unit_level, travel_goal, travel_date, daily_minutes, placement_cefr FROM learner LIMIT 1"
             ).fetchone()
         if not r:
             raise HTTPException(status_code=404, detail="Learner not found. Run init_db.py first.")
-        return {"name": r[0], "elo": r[1], "xp": r[2], "unit": r[3]}
+        return {
+            "name":           r[0],
+            "elo":            r[1],
+            "xp":             r[2],
+            "unit":           r[3],
+            "travel_goal":    r[4] or "",
+            "travel_date":    r[5] or "",
+            "daily_minutes":  r[6] or 10,
+            "placement_cefr": r[7] or "A1",
+        }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -1483,15 +1497,6 @@ def complete_story(story_id: str, score: int, total: int):
 
 # ── Onboarding ────────────────────────────────────────────────────────────────
 
-@app.get("/api/onboarding/placement-quiz")
-def get_placement_quiz_endpoint():
-    try:
-        from placement_quiz import get_placement_quiz
-        return get_placement_quiz()
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
 @app.get("/api/onboarding/status")
 def onboarding_status():
     try:
@@ -1514,6 +1519,7 @@ def onboarding_status():
 def complete_onboarding(req: OnboardingRequest):
     try:
         _ensure_core_db()
+        _ensure_learner_profile_schema()
         import sqlite3
 
         with sqlite3.connect("cato_mind.db") as db:
@@ -1537,36 +1543,20 @@ def complete_onboarding(req: OnboardingRequest):
                 ("onboarded", "1"),
             )
             db.execute("UPDATE streak_state SET daily_goal_xp=? WHERE id=1", (req.daily_xp,))
+
+            existing_cols = {r[1] for r in db.execute("PRAGMA table_info(learner)").fetchall()}
+            if "travel_goal" in existing_cols:
+                db.execute(
+                    """UPDATE learner SET travel_goal=?, travel_date=?, daily_minutes=?, placement_cefr=?
+                       WHERE id=1""",
+                    (
+                        req.travel_goal or "general_fluency",
+                        req.travel_date or "",
+                        req.daily_minutes or 10,
+                        _elo_to_cefr(800 + req.placement_score * 80),
+                    ),
+                )
         return {"ok": True}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-# ── Memory log ────────────────────────────────────────────────────────────────
-
-@app.get("/api/memory/log")
-def memory_log(limit: int = 50):
-    try:
-        _ensure_core_db()
-        import sqlite3
-        with sqlite3.connect("cato_mind.db") as db:
-            rows = db.execute(
-                """SELECT id, unit_id, cefr, accuracy_pct, xp_earned, finished_at
-                   FROM lesson_log ORDER BY finished_at DESC LIMIT ?""",
-                (limit,)
-            ).fetchall()
-        items = [
-            {
-                "id": r[0],
-                "lesson_id": r[1] or "lesson",
-                "source": "lesson",
-                "title": f"{r[2]} Lesson — {r[1] or 'General'}",
-                "detail": f"{r[3]}% accuracy · {r[4]} XP",
-                "created_at": r[5] or "",
-            }
-            for r in rows
-        ]
-        return {"items": items}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -1902,6 +1892,338 @@ def _table_exists(name: str) -> bool:
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,)
         ).fetchone()
     return row is not None
+
+
+# ── Learner Profile Engine (v2.8) ─────────────────────────────────────────────
+
+TRAVEL_GOAL_WEIGHTS = {
+    "trip_to_paris":   {"travel": 3.0, "food": 2.5, "directions": 2.5, "culture": 2.0, "shopping": 1.5},
+    "trip_to_lyon":    {"food": 3.5, "travel": 2.5, "directions": 2.0, "shopping": 1.5, "culture": 1.5},
+    "trip_to_south":   {"beach": 3.0, "food": 2.5, "travel": 2.0, "weather": 2.0, "directions": 1.5},
+    "move_to_france":  {"housing": 3.5, "admin": 3.0, "work": 3.0, "daily_life": 2.5, "banking": 2.0},
+    "business_french": {"work": 3.5, "formal": 3.0, "email": 2.5, "meetings": 2.5, "finance": 2.0},
+    "general_fluency": {"grammar": 2.0, "conversation": 2.0, "culture": 1.5, "daily_life": 1.5},
+}
+
+
+def _elo_to_cefr(elo: int) -> str:
+    if elo >= 1800: return "C2"
+    if elo >= 1600: return "C1"
+    if elo >= 1400: return "B2"
+    if elo >= 1200: return "B1"
+    if elo >= 1000: return "A2"
+    return "A1"
+
+
+def _ensure_learner_profile_schema():
+    """Add learner profile columns and inferred_state table if they don't exist."""
+    import sqlite3
+    with sqlite3.connect("cato_mind.db") as db:
+        existing = {r[1] for r in db.execute("PRAGMA table_info(learner)").fetchall()}
+        for col, defn in [
+            ("travel_goal",    "TEXT DEFAULT ''"),
+            ("travel_date",    "TEXT DEFAULT ''"),
+            ("daily_minutes",  "INTEGER DEFAULT 10"),
+            ("placement_cefr", "TEXT DEFAULT 'A1'"),
+        ]:
+            if col not in existing:
+                db.execute(f"ALTER TABLE learner ADD COLUMN {col} {defn}")
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS inferred_state (
+                id                INTEGER PRIMARY KEY DEFAULT 1,
+                frustration_score REAL    NOT NULL DEFAULT 0.0,
+                velocity          REAL    NOT NULL DEFAULT 0.0,
+                vocab_breadth     INTEGER NOT NULL DEFAULT 0,
+                updated_at        TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        db.execute("INSERT OR IGNORE INTO inferred_state (id) VALUES (1)")
+
+
+try:
+    _ensure_learner_profile_schema()
+except Exception as _lpe:
+    log.warning("Learner profile schema migration: %s", _lpe)
+
+
+@app.get("/api/learner/inferred-state")
+def get_inferred_state():
+    try:
+        import sqlite3
+        _ensure_core_db()
+        _ensure_learner_profile_schema()
+        with sqlite3.connect("cato_mind.db") as db:
+            row = db.execute(
+                "SELECT frustration_score, velocity, vocab_breadth, updated_at FROM inferred_state WHERE id=1"
+            ).fetchone()
+        if not row:
+            return {"frustration_score": 0.0, "velocity": 0.0, "vocab_breadth": 0, "updated_at": ""}
+        return {
+            "frustration_score": float(row[0] or 0.0),
+            "velocity":          float(row[1] or 0.0),
+            "vocab_breadth":     int(row[2] or 0),
+            "updated_at":        row[3] or "",
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/learner/inferred-state/recalculate")
+def recalculate_inferred_state():
+    try:
+        import sqlite3
+        _ensure_core_db()
+        _ensure_learner_profile_schema()
+        with sqlite3.connect("cato_mind.db") as db:
+            rows = db.execute(
+                "SELECT correct, response_ms FROM adaptive_events ORDER BY id DESC LIMIT 40"
+            ).fetchall()
+            total = len(rows)
+            if total == 0:
+                frustration = 0.0
+            else:
+                wrong = sum(1 for r in rows if not r[0])
+                slow  = sum(1 for r in rows if (r[1] or 0) > 25000)
+                frustration = round(min(1.0, (slow/total * 2 + wrong/total) / 3), 3)
+
+            learner_row = db.execute("SELECT xp FROM learner WHERE id=1").fetchone()
+            xp = int((learner_row or [0])[0] or 0)
+            active_minutes = max(1, total * 0.75)
+            velocity = round(xp / (active_minutes / 60), 1)
+
+            mastery_row = db.execute(
+                "SELECT value FROM app_settings WHERE key='adaptive_mastery_v1' LIMIT 1"
+            ).fetchone()
+            vocab_breadth = 0
+            if mastery_row and mastery_row[0]:
+                try:
+                    mastery_data = json.loads(mastery_row[0])
+                    vocab_breadth = sum(1 for v in mastery_data.values() if float(v) >= 0.6)
+                except Exception:
+                    pass
+
+            db.execute(
+                """UPDATE inferred_state
+                   SET frustration_score=?, velocity=?, vocab_breadth=?, updated_at=datetime('now')
+                   WHERE id=1""",
+                (frustration, velocity, vocab_breadth),
+            )
+        return {"frustration_score": frustration, "velocity": velocity, "vocab_breadth": vocab_breadth}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/personalization/topic-weights")
+def get_topic_weights():
+    try:
+        import sqlite3
+        _ensure_core_db()
+        _ensure_learner_profile_schema()
+        with sqlite3.connect("cato_mind.db") as db:
+            row = db.execute("SELECT travel_goal FROM learner WHERE id=1").fetchone()
+        goal = (row[0] if row else "") or "general_fluency"
+        return TRAVEL_GOAL_WEIGHTS.get(goal, TRAVEL_GOAL_WEIGHTS["general_fluency"])
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/personalization/next-question")
+def get_personalization_hint():
+    """Core personalization decision tree — returns next question parameters."""
+    try:
+        import sqlite3
+        _ensure_core_db()
+        _ensure_learner_profile_schema()
+        with sqlite3.connect("cato_mind.db") as db:
+            learner = db.execute(
+                "SELECT elo, travel_goal, daily_minutes, placement_cefr FROM learner WHERE id=1"
+            ).fetchone()
+            mastery_row = db.execute(
+                "SELECT value FROM app_settings WHERE key='adaptive_mastery_v1' LIMIT 1"
+            ).fetchone()
+            weak_skills = db.execute(
+                """SELECT skill_tag, COUNT(*) as attempts,
+                          SUM(CASE WHEN correct=0 THEN 1 ELSE 0 END) as wrong
+                   FROM adaptive_events
+                   GROUP BY skill_tag
+                   HAVING attempts >= 3
+                   ORDER BY CAST(wrong AS FLOAT)/attempts DESC
+                   LIMIT 3"""
+            ).fetchall()
+            inferred = db.execute(
+                "SELECT frustration_score FROM inferred_state WHERE id=1"
+            ).fetchone()
+
+        elo           = int((learner or [800])[0] or 800)
+        travel_goal   = str((learner or [800, "general_fluency"])[1] or "general_fluency")
+        daily_minutes = int((learner or [800, "", 10])[2] or 10)
+
+        cefr = _elo_to_cefr(elo)
+        frustration = float((inferred or [0.0])[0] or 0.0)
+        topic_weights = TRAVEL_GOAL_WEIGHTS.get(travel_goal, TRAVEL_GOAL_WEIGHTS["general_fluency"])
+
+        mastery: dict = {}
+        if mastery_row and mastery_row[0]:
+            try:
+                mastery = {k: float(v) for k, v in json.loads(mastery_row[0]).items()}
+            except Exception:
+                pass
+
+        if frustration > 0.6:
+            drop = {"C2":"C1","C1":"B2","B2":"B1","B1":"A2","A2":"A1","A1":"A1"}
+            return {
+                "next_skill": "general", "next_type": "mcq",
+                "cefr": drop.get(cefr, cefr), "difficulty_target": "easy",
+                "topic_weight": topic_weights, "session_length": max(5, int(daily_minutes * 0.8)),
+                "reason": f"High frustration ({frustration:.2f}) — simplifying and switching to MCQ.",
+            }
+
+        for tag, attempts, wrong in weak_skills:
+            err = wrong / max(attempts, 1)
+            skill_mastery = mastery.get(tag, 0.5)
+            if err > 0.5 or skill_mastery < 0.4:
+                q_type = "arrange" if tag in ("syntax", "grammar") else "translate"
+                return {
+                    "next_skill": tag, "next_type": q_type, "cefr": cefr,
+                    "difficulty_target": "medium", "topic_weight": topic_weights,
+                    "session_length": int(daily_minutes * 1.2),
+                    "reason": f"Weak skill: {tag} (mastery {skill_mastery:.2f}, error rate {err:.0%}).",
+                }
+
+        top_topic = max(topic_weights, key=lambda t: topic_weights[t])
+        return {
+            "next_skill": "general", "next_type": "mixed", "cefr": cefr,
+            "difficulty_target": "normal", "topic_weight": topic_weights,
+            "session_length": int(daily_minutes * 1.2),
+            "reason": f"Goal-boosted topic: {top_topic} (weight {topic_weights[top_topic]:.1f}).",
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/adaptive/mastery")
+def get_adaptive_mastery():
+    """Return the full adaptive mastery blob."""
+    try:
+        import sqlite3
+        _ensure_core_db()
+        with sqlite3.connect("cato_mind.db") as db:
+            row = db.execute(
+                "SELECT value FROM app_settings WHERE key='adaptive_mastery_v1' LIMIT 1"
+            ).fetchone()
+        mastery = {}
+        if row and row[0]:
+            try:
+                mastery = json.loads(row[0])
+            except Exception:
+                pass
+        return {"mastery": mastery}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/adaptive/mastery")
+def save_adaptive_mastery(body: dict = Body(default={})):
+    """Save the adaptive mastery blob from the frontend."""
+    try:
+        import sqlite3
+        _ensure_core_db()
+        mastery_data = body.get("mastery", {})
+        with sqlite3.connect("cato_mind.db") as db:
+            db.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)",
+                ("adaptive_mastery_v1", json.dumps(mastery_data)),
+            )
+        return {"ok": True}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/performance/summary")
+def performance_summary(days: int = 14):
+    """Accuracy, attempts, response time breakdown for the last N days."""
+    try:
+        import sqlite3
+        _ensure_core_db()
+        with sqlite3.connect("cato_mind.db") as db:
+            rows = db.execute(
+                """SELECT q_type, correct, response_ms
+                   FROM adaptive_events
+                   WHERE created_at >= datetime('now', ? || ' days')
+                   ORDER BY id DESC""",
+                (f"-{days}",),
+            ).fetchall()
+
+        total = len(rows)
+        if total == 0:
+            return {"days": days, "attempts": 0, "accuracy": 0.0, "by_source": {}, "by_type": []}
+
+        correct = sum(1 for r in rows if r[1])
+        accuracy = round(correct / total, 3)
+
+        by_type_data: dict = {}
+        for q_type, is_correct, ms in rows:
+            t = by_type_data.setdefault(q_type, {"attempts": 0, "correct": 0, "total_ms": 0})
+            t["attempts"] += 1
+            if is_correct:
+                t["correct"] += 1
+            t["total_ms"] += (ms or 0)
+
+        by_type = [
+            {
+                "q_type":          qt,
+                "attempts":        d["attempts"],
+                "accuracy":        round(d["correct"] / max(d["attempts"], 1), 3),
+                "avg_response_ms": round(d["total_ms"] / max(d["attempts"], 1)),
+            }
+            for qt, d in sorted(by_type_data.items(), key=lambda x: -x[1]["attempts"])
+        ]
+
+        return {
+            "days":      days,
+            "attempts":  total,
+            "accuracy":  accuracy,
+            "by_source": {"drill": total},
+            "by_type":   by_type,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/performance/trend")
+def performance_trend(days: int = 30):
+    """Day-by-day accuracy and attempt trend for the last N days."""
+    try:
+        import sqlite3
+        from datetime import date, timedelta
+        _ensure_core_db()
+        with sqlite3.connect("cato_mind.db") as db:
+            rows = db.execute(
+                """SELECT DATE(created_at) as day, COUNT(*) as attempts,
+                          SUM(correct) as correct,
+                          AVG(response_ms) as avg_ms
+                   FROM adaptive_events
+                   WHERE created_at >= datetime('now', ? || ' days')
+                   GROUP BY DATE(created_at)
+                   ORDER BY day ASC""",
+                (f"-{days}",),
+            ).fetchall()
+
+        row_map = {r[0]: r for r in rows}
+        points = []
+        for i in range(days):
+            d = (date.today() - timedelta(days=days - 1 - i)).isoformat()
+            r = row_map.get(d)
+            points.append({
+                "day":             d,
+                "attempts":        int(r[1]) if r else 0,
+                "accuracy":        round(int(r[2] or 0) / max(int(r[1] or 1), 1), 3) if r else 0.0,
+                "avg_response_ms": round(float(r[3] or 0)) if r else 0,
+            })
+
+        return {"days": days, "points": points}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ── Run directly ──────────────────────────────────────────────────────────────
